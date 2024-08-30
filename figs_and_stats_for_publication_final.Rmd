@@ -1,0 +1,4610 @@
+---
+title: "stats & figs for publication"
+author: "Yoni"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+This is a script for the (hopefully) final analysis for publication
+Script is organized according to Figures. 
+
+```{r load libraries, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+
+library(Rmisc)
+library(ggpubr)
+library(knitr)
+library(broom)
+library(zoo)
+library(lubridate)
+library(rstatix)
+library(psycho)
+library(bayestestR)
+library(BayesFactor)
+library(pscl)
+library(PerformanceAnalytics)
+library(lme4)
+library(Hmisc)
+library(hms)
+library(emmeans)
+library(vroom)
+library (cowplot)
+library(ggforce)
+library(tidyverse)
+```
+
+
+```{r load functions & parameters}
+#parameter file
+source(file.path("functions","parameters_4_fig_and_stats_for_publication.R"))
+
+#function file
+source(file.path("functions","functions_4_figs_and_stats_for_pub.R"))
+```
+
+```{r load data csv}
+
+# load all subject
+fname_mean_gz_all_sub<-file.path(path_processed_csv,"all_exp_mean_gz_tbt_all_sub_290824.csv")
+
+mean_gz_all_sub_csv<-read_csv(fname_mean_gz_all_sub,show_col_types = FALSE)
+
+#Pre-registered subject
+fname_mean_gz_prereg<-file.path(path_processed_csv,"all_exp_mean_gz_tbt_only_prereg_ss_trials_290824.csv")
+
+
+
+mean_gz_prereg_csv<-read_csv(fname_mean_gz_prereg,show_col_types = FALSE)
+
+#slim trkr pre-regesteried (contains only mean gaze direction)
+fname_slim_trkr_prereg<-file.path(path_processed_csv,"all_exp_slim_trkr_only_prereg_ss_trials_290824.csv")
+
+slim_trkr_prereg_csv<-vroom(fname_slim_trkr_prereg,show_col_types = FALSE)
+
+
+#model fitting outputs- using 24/01/24 output (this has all subjects)
+# # model parameters
+# fname_learn_model_param<-file.path(path_processed_csv,"all_exp_n_sub_param_tbl_120224.csv")
+# 
+# learn_model_param_all_csv<-read_csv(fname_learn_model_param,show_col_types = FALSE)
+
+# #tbt traj of RW model
+# fname_RW_traj<-file.path(path_processed_csv,"all_exp_n_sub_RW_RWS_traj_tbl_150224.csv")
+# 
+# RW_traj_all_csv<-read_csv(fname_RW_traj,show_col_types = FALSE)
+
+
+# files for parameter & model recovery
+fname_param_recov_csv<-file.path(path_processed_csv,"parameter_model_recovery_files","parameter_recovery_120824.csv")
+param_recov_csv<-read_csv(fname_param_recov_csv,show_col_types = FALSE)
+
+```
+
+
+## prep data
+```{r additional preping of csv}
+# 
+# ## Renaming experiment
+# 
+# #for all subjects
+# mean_gz_all_sub_csv$exp_name<- dplyr::recode(mean_gz_all_sub_csv$exp_name,exploration= "Exp. 1",replication= "Exp. 2", conf_exp = "Exp. 3")
+# 
+# #for pre-reg
+# mean_gz_prereg_csv$exp_name<- dplyr::recode(mean_gz_prereg_csv$exp_name,exploration= "Exp. 1",replication= "Exp. 2", conf_exp = "Exp. 3")
+# 
+# 
+# ## Joining in model parameters (done via function)
+# 
+# mean_gz_prereg_csv<-merge_tbt_with_model_traj(mean_gz_csv=mean_gz_prereg_csv,
+#                                               RW_traj_csv = RW_traj_all_csv,
+#                                               model_param = learn_model_param_all_csv)
+# 
+# 
+# #for slim_trkr
+# slim_trkr_prereg_csv$exp_name<- dplyr::recode(slim_trkr_prereg_csv$exp_name,exploration= "Exp. 1",replication= "Exp. 2", conf_exp = "Exp. 3")
+# 
+# slim_trkr_prereg_csv<-slim_trkr_prereg_csv%>%
+#   dplyr::ungroup()%>%
+#   dplyr::group_by(sub_name)%>%
+#   dplyr::mutate(z_gz=scale_this(gaze_col)*-1) # multiply by -1 so that Right is positive
+# 
+# 
+# #ensure we are only keeping valid trials
+# slim_trkr_prereg_csv<-dplyr::inner_join(slim_trkr_prereg_csv,
+#                                         mean_gz_prereg_csv%>%                                         select(exp_name,sub_name,TrialNumber,QuestionResult,is_acc,resp_rule_acc),
+#                                         by=c("sub_name", "TrialNumber", "exp_name"))
+
+```
+
+
+
+
+```{r prep data to correlate explicit and gaze confidence ratings}
+#create a df with only experiment 3
+mean_gz_prereg_exp3<-mean_gz_prereg_csv%>%
+  dplyr::filter(exp_name=="Exp. 3")
+
+#zscore explicit confidence ratings
+##CENTERING confidence ratings (so the initial point & mid rating is 0)
+mean_gz_prereg_exp3<-mean_gz_prereg_exp3%>%
+  dplyr::group_by(sub_name)%>%
+  dplyr::mutate(orig_conf_rating=conf_rating,
+                conf_rating=conf_rating-3)%>% 
+  dplyr::relocate(c(orig_conf_rating),.after = conf_rating)
+
+#adding z-score of confidence
+mean_gz_prereg_exp3<-mean_gz_prereg_exp3%>%
+  group_by(sub_name)%>%
+  dplyr::mutate(z_conf_rating=scale_this(conf_rating))%>%
+  dplyr::relocate(z_conf_rating,.after=conf_rating)
+
+# getting "eye_confidence rating"
+mean_gz_prereg_exp3<-mean_gz_prereg_exp3%>%
+  dplyr::group_by(sub_name)%>%
+  dplyr::mutate(
+    mx_gz=max(m_pred_gz),mn_gz=min(m_pred_gz)
+  )%>%
+  dplyr::rowwise()%>%
+  mutate(gz_conf=findInterval(m_pred_gz, seq(mn_gz,mx_gz,length.out=6),all.inside = TRUE))%>% #this bins the condience rating into five equidistant bins
+  mutate(gz_conf=gz_conf-3)%>%
+  dplyr::group_by(sub_name)%>%
+  dplyr::mutate(z_gz_conf=scale_this(gz_conf))%>%
+  dplyr::select(-c(mx_gz,mn_gz))%>%
+  dplyr::relocate(c(m_pred_gz ,gz_conf,z_gz_conf),.after = z_conf_rating)
+
+
+```
+
+
+<!-- As a QA test lets see how it looks for individual subjects -->
+
+<!-- ```{r viz distribution of confidence ratings and eye ratings} -->
+<!-- #gz_conf -->
+<!-- ( -->
+<!--   ggplot(data=mean_gz_prereg_exp3,aes(x=gz_conf))+ -->
+<!--     ggtitle ("distribution gz_conf")+ -->
+<!--     geom_histogram()+ -->
+<!--     facet_wrap(~sub_name,scales="free_y") -->
+<!-- ) -->
+
+
+<!-- ( -->
+<!--   ggplot(data=mean_gz_prereg_exp3,aes(x=z_gz_conf))+ -->
+<!--     ggtitle ("distribution z_gz_conf")+ -->
+<!--     geom_histogram()+ -->
+<!--     facet_wrap(~sub_name,scales="free_y") -->
+<!-- ) -->
+
+
+<!-- ( -->
+<!--   ggplot(data=mean_gz_prereg_exp3,aes(x=z_conf_rating))+ -->
+<!--     ggtitle ("distribution z_conf_rating")+ -->
+<!--     geom_histogram()+ -->
+<!--     facet_wrap(~sub_name,scales="free_y") -->
+<!-- ) -->
+<!-- ``` -->
+
+# {.tabset .tabset-pills}
+
+## Fig S1&2
+
+### SM Fig S1A: overall acc
+```{r prep data for  acc per exp all subject}
+
+sum_acc_all_sub<-mean_gz_all_sub_csv%>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  dplyr::summarize(acc=mean(is_acc)*100,
+                   rule_acc=mean(resp_rule_acc)*100)
+```
+
+```{r viz fig S1 acc per exp all subject}
+(plot_SM_fig_S1A<-
+   ggplot(data = sum_acc_all_sub,
+          aes(y=acc, x=1))+
+   geom_violin(alpha=.4,trim=FALSE)+
+   geom_boxplot(alpha=.4,width=.05,outlier.shape = NA)+
+   geom_point(position = position_jitter(width=.1),alpha=.8,color="darkgrey")+
+   geom_point(shape=4,aes(y=mean(acc)),size=5, color="red")+
+   ylab("% Accuracy")+
+   geom_hline(yintercept = 0.5*100, color="red",linetype=1)+
+   geom_hline(yintercept = 0.55*100, color="orange",linetype=2)+
+   theme_classic()+
+   theme(
+     axis.title.y = element_text(size = 14,face="bold"),
+     axis.text.y = element_text(size = 14,angle=0),
+     axis.text.x = element_blank(),
+     axis.title.x = element_blank(),
+     strip.text = element_text(size = 16,face="bold")
+     
+   )+
+   facet_wrap(~exp_name)
+ 
+)
+
+# ggsave(plot = plot_SM_fig_S1A,filename = file.path(path_export_sm_pics,"SM_fig_S1A.jpg"), width=15, units = "cm")
+```
+
+```{r print summary stats of acc Table S1}
+#for each experiment seperately
+smry_stats_acc_all_sub<-sum_acc_all_sub%>%
+  dplyr::group_by(exp_name)%>%
+  dplyr::summarise(mean=CI(acc)[2],lo_ci=CI(acc)[3],hi_ci=CI(acc)[1],
+                   t=t.test(acc,mu=50)$statistic,df=t.test(acc,mu=50)$parameter, p.val=t.test(acc,mu=50)$p.value, ES=one_sample_ttest_cohen_d(acc))
+
+# combined across experiments
+smry_stats_acc_comb<-sum_acc_all_sub%>%
+  dplyr::ungroup()%>%
+  dplyr::summarise(exp_name="combined",mean=CI(acc)[2],lo_ci=CI(acc)[3],hi_ci=CI(acc)[1],
+                   t=t.test(acc,mu=50)$statistic,df=t.test(acc,mu=50)$parameter, p.val=t.test(acc,mu=50)$p.value,ES=one_sample_ttest_cohen_d(acc))
+
+#joining
+smry_stats_acc_all_sub_comb<-bind_rows(smry_stats_acc_all_sub,
+                                       smry_stats_acc_comb)
+
+knitr::kable(smry_stats_acc_all_sub_comb,digits=1,caption = "Table S1: Acc per experiment across all subjects")
+
+```
+
+### SM Fig 1B. Behav benchmarks of learning- acc on Cue valid>invalid
+``` {r compare acc on  Cue Valid (CV) vs. Cue Invalid (CIV)}
+#prep data
+sum_acc_cong_vs_incong<-mean_gz_all_sub_csv%>%
+  dplyr::group_by(exp_name,sub_name,is_cue_valid)%>%
+  dplyr::summarize(acc=mean(is_acc)*100)
+
+#plot acc on cong vs. incong
+(plot_SM_fig_S1B<-
+    ggpaired(data =sum_acc_cong_vs_incong,
+             x="is_cue_valid", y="acc", id="sub_name",fill = "is_cue_valid",line.color = "lightgrey",line.size = .2 )+
+    scale_x_discrete(name= "Trial's Cue Validity")+
+    scale_fill_manual(values =c("deeppink1","aquamarine3"),labels=c("Invalid","Valid"))+
+    scale_y_continuous(name= "% Accuracy")+
+    geom_hline(yintercept = 50, color="red",linetype="dashed")+
+    # ggtitle("acc by cue validity (all sub)")+
+    theme_classic()+
+    theme(axis.title.x = element_text(size = 14,face="bold"),
+          axis.title.y = element_text(size = 14,face="bold"),
+          axis.text.x = element_text(size = 14,angle=0),
+          axis.text.y = element_text(size = 14,angle=0),
+          strip.text = element_text(size = 16,face="bold"),
+          legend.position = "none") +
+    facet_wrap(~exp_name)
+  
+)
+
+# ggsave(plot = plot_SM_fig_S1B,filename = file.path(path_export_sm_pics,"SM_fig_S1B.jpg"), width=15, units = "cm")
+```
+
+```{r combine plots S1}
+#Combining plots
+(
+  plot_SM_fig_S1_comb<-plot_grid(plot_SM_fig_S1A,plot_SM_fig_S1B, nrow=2,align="v") 
+)
+
+# ggsave(plot = plot_SM_fig_S1_comb,filename = file.path(path_export_sm_pics,"SM_fig_S1_comb.jpg"))
+
+```
+
+```{r print Table S2 summary stats of CV vs CI acc}
+#for each experiment seperately
+smry_stats_cong_vs_incong<-sum_acc_cong_vs_incong%>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  dplyr::mutate(diff_acc=acc-first(acc))%>%
+  dplyr::filter(diff_acc!=0)%>%
+  dplyr::group_by(exp_name)%>%
+  dplyr::summarise(mean_diff=CI(diff_acc)[2],lo_ci=CI(diff_acc)[3],hi_ci=CI(diff_acc)[1],
+                   t=t.test(diff_acc,mu=0)$statistic,df=t.test(diff_acc,mu=0)$parameter, p.val=t.test(diff_acc,mu=0)$p.value, ES=one_sample_ttest_cohen_d(diff_acc))
+
+# combined across experiments
+smry_stats_cong_vs_incong_comb<-sum_acc_cong_vs_incong%>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  dplyr::mutate(diff_acc=acc-first(acc))%>%
+  dplyr::filter(diff_acc!=0)%>%
+  dplyr::ungroup()%>%
+  dplyr::summarise(exp_name="combined",mean_diff=CI(diff_acc)[2],lo_ci=CI(diff_acc)[3],hi_ci=CI(diff_acc)[1],
+                   t=t.test(diff_acc,mu=0)$statistic,df=t.test(diff_acc,mu=0)$parameter, p.val=t.test(diff_acc,mu=0)$p.value, ES=one_sample_ttest_cohen_d(diff_acc))
+
+#joining
+smry_stats_cong_vs_incong_all_sub_comb<-bind_rows(smry_stats_cong_vs_incong,
+                                                  smry_stats_cong_vs_incong_comb)
+
+knitr::kable(smry_stats_cong_vs_incong_all_sub_comb,
+             digits=1,caption = "Table S2 Diff Acc Cue valid vs Cue Invalid per experiment across all subjects")
+
+```
+
+### SM Figure S2 (Left): learning curve of acc- all Subjects
+```{r prep data for learning curve of acc all sub}
+
+#subject by subject relative accuracy-per relative trial number
+learning_curve_acc_all_sbs<-mean_gz_all_sub_csv%>%
+  dplyr::group_by(exp_name,sub_name,rel_trial_number)%>%
+  dplyr::mutate(bin_ind=findInterval(rel_trial_number,seq(1,36,by=4)))%>%
+  dplyr::group_by(exp_name,sub_name,bin_ind)%>%
+  dplyr::summarize(rel_acc_actual=mean(is_acc)*100,
+                   rel_acc_rule=mean(resp_rule_acc)*100)
+
+#all subjects
+#pivoting to long and adding a column of acc type
+learning_curve_acc_all_sbs<-learning_curve_acc_all_sbs%>%
+  pivot_longer(!c(exp_name,sub_name,bin_ind), names_prefix = "rel_acc_",names_to="type_acc", values_to = "acc_val")
+
+
+#group statistic-per relative trial number
+learning_curve_acc_grp_all_subs<-learning_curve_acc_all_sbs%>%
+  dplyr::group_by(exp_name,bin_ind,type_acc)%>%
+  dplyr::summarize(lo_ci=CI(acc_val)[3],hi_ci=CI(acc_val)[1],mean_acc=CI(acc_val)[2])
+```
+
+Note! This is graph with all of the subjects
+```{r viz learning curve of acc all sub}
+
+#Plot All subjects
+#plot learning within block binned by 4 trial 
+(plot_SM_fig_S2_right<-
+   ggplot(data=learning_curve_acc_grp_all_subs%>%dplyr::filter(bin_ind<9),aes(x=bin_ind,y=mean_acc, group=type_acc,color=type_acc, fill=type_acc))+
+   geom_line()+
+   geom_point()+
+   geom_ribbon(aes(ymin=lo_ci ,ymax=hi_ci),alpha=.3, color=NA)+
+   # geom_line(data=sbs_rel_trial_acc_bin,aes(x=bin_ind,y=rel_actual_acc,group=sub_name),alpha=.2)+
+   scale_x_continuous(name=" Trial # (in block)", labels = c("1-4","5-8","9-12","13-16","17-20","21-24","25-28","29-32"),breaks = c(1:8),limit=c(1,8))+
+   scale_y_continuous(name = "% Accuracy",breaks=c(seq(40,90,by=10)),labels = c("","50","","70","","90"))+
+   geom_hline(yintercept = 50, color="brown1",linetype="dashed")+
+   scale_color_manual(values=color_vec_acc_type, name= "Accuracy Type" )+
+   scale_fill_manual(values=color_vec_acc_type, name= "Accuracy Type")+
+   ggtitle ("All Participants")+
+   theme_classic()+
+   theme(axis.title.x = element_text(size = 14,face="bold"),
+         axis.title.y = element_text(size = 14,face="bold"),
+         axis.text.x = element_text(size = 12,angle=15),
+         axis.text.y = element_text(size = 12,angle=0),
+         strip.text = element_text(size = 16,face="bold"),
+         plot.title=element_text(size = 16,face="bold",hjust=.5),
+         legend.position = "none"
+         )+
+   
+   facet_col(~exp_name)
+ 
+)
+
+```
+
+### SM Figure 2 (Left): learning curve with only pre-reg subs & trials
+Rerun the same graph but only with those that are pre-registered
+
+```{r prep data for learning curve of acc prereg}
+
+#subject by subject relative accuracy-per relative trial number
+learning_curve_acc_prereg_sbs<-mean_gz_prereg_csv%>%
+  dplyr::group_by(exp_name,sub_name,rel_trial_number)%>%
+  dplyr::mutate(bin_ind=findInterval(rel_trial_number,seq(1,36,by=4)))%>%
+  dplyr::group_by(exp_name,sub_name,bin_ind)%>%
+  dplyr::summarize(rel_acc_actual=mean(is_acc)*100,
+                   rel_acc_rule=mean(resp_rule_acc)*100)
+
+#all subjects
+#pivoting to long and adding a column of acc type
+learning_curve_acc_prereg_sbs<-learning_curve_acc_prereg_sbs%>%
+  pivot_longer(!c(exp_name,sub_name,bin_ind), names_prefix = "rel_acc_",names_to="type_acc", values_to = "acc_val")
+
+
+#group statistic-per relative trial number
+learning_curve_acc_prereg_grp<-learning_curve_acc_prereg_sbs%>%
+  dplyr::group_by(exp_name,bin_ind,type_acc)%>%
+  dplyr::summarize(lo_ci=CI(acc_val)[3],hi_ci=CI(acc_val)[1],mean_acc=CI(acc_val)[2])
+
+
+```
+
+
+```{r viz learning curve of acc prereg}
+
+#Plot Prereg subjects
+#plot learning within block binned by 4 trial 
+(
+  plot_SM_fig_S2_left<-
+  ggplot(data=learning_curve_acc_prereg_grp%>%dplyr::filter(bin_ind<9),aes(x=bin_ind,y=mean_acc, group=type_acc,color=type_acc, fill=type_acc))+
+    geom_line()+
+    geom_point()+
+    geom_ribbon(aes(ymin=lo_ci ,ymax=hi_ci),alpha=.3, color=NA)+
+    # geom_line(data=sbs_rel_trial_acc_bin,aes(x=bin_ind,y=rel_actual_acc,group=sub_name),alpha=.2)+
+    scale_x_continuous(name=" Trial # (in block)", labels = c("1-4","5-8","9-12","13-16","17-20","21-24","25-28","29-32"),breaks = c(1:8),limit=c(1,8))+
+   scale_y_continuous(name = "% Accuracy",breaks=c(seq(40,90,by=10)),labels = c("","50","","70","","90"))+
+    geom_hline(yintercept = 50, color="brown1",linetype="dashed")+
+    scale_color_manual(values=color_vec_acc_type, name= "Accuracy Type" )+
+    scale_fill_manual(values=color_vec_acc_type, name= "Accuracy Type")+
+    ggtitle ("Pre-Reg Participants")+
+   theme_classic()+
+   theme(axis.title.x = element_text(size = 14,face="bold"),
+         axis.title.y = element_blank(),
+         axis.text.x = element_text(size = 12,angle=15),
+         axis.text.y = element_text(size = 12,angle=0),
+         strip.text = element_text(size = 16,face="bold"),
+         plot.title=element_text(size = 16,face="bold",hjust=.5)
+         )+
+    facet_col(~exp_name)
+  
+)
+
+
+# ggsave(plot = plot_SM_fig_S2_left,filename = file.path(path_export_sm_pics,"SM_fig_S2_left.jpg"))
+# ggsave(plot = plot_SM_fig_S2_right,filename = file.path(path_export_sm_pics,"SM_fig_S2_right.jpg"))
+
+```
+
+## Fig 1
+
+### Fig 1 C Hypothetical results
+```{r visualize hypothetical explicit and eye response same_diff barplot}
+
+hypo_results_fig1<-tibble(hypo=rep(c("no_overlap","partial_overlap","full_overlap"),each=2),eye_resp_match=rep(c("Converge","Diverge"),times=3),mean_porp=c(50,50,75,25,95,5))
+
+(
+  plot_fig_1C_no_overlap<-ggplot(hypo_results_fig1%>%dplyr::filter(hypo=="no_overlap"), aes(x=eye_resp_match, y=mean_porp, fill = eye_resp_match)) + 
+    geom_bar(stat="identity", linewidth=2, position=position_dodge(width = .9),width=.5, ,alpha=0.4) + 
+    geom_hline(yintercept = 50, color="brown1",linetype="dashed",linewidth=1.5, alpha=.8)+
+    #change y label and limits
+    scale_y_continuous(name="% Trials",limits = c(0,100))+
+    scale_x_discrete(name="Explicit - Ocular")+
+    #change legend labels
+    scale_fill_manual(values = c("#CCCCCC","#707070"))+
+    theme_classic()+
+    theme(axis.text.y =element_text(size=14),
+          axis.title.y=element_text(size=16,face="bold"),
+          axis.text.x =element_text(size=14), 
+          axis.title.x=element_text(size=16,face="bold"),
+          legend.position = "none"
+    )
+)
+
+(
+  plot_fig_1C_partial_overlap<-ggplot(hypo_results_fig1%>%dplyr::filter(hypo=="partial_overlap"), aes(x=eye_resp_match, y=mean_porp, fill = eye_resp_match)) + 
+    geom_bar(stat="identity", linewidth=2, position=position_dodge(width = .9),width=.5,alpha=0.4) + 
+    geom_hline(yintercept = 50, color="brown1",linetype="dashed",linewidth=1.5, alpha=.8)+
+    #change y label and limits
+    scale_y_continuous(name="% Trials",limits = c(0,100))+
+    scale_x_discrete(name="Explicit - Ocular")+
+    #change legend labels
+    scale_fill_manual(values = c("#CCCCCC","#707070"))+
+    theme_classic()+
+    theme(axis.text.y =element_text(size=14),
+          axis.title.y=element_text(size=16,face="bold"),
+          axis.text.x =element_text(size=14), 
+          axis.title.x=element_text(size=16,face="bold"),
+          legend.position = "none"
+    )
+)
+
+
+(
+  plot_fig_1C_full_overlap<-ggplot(hypo_results_fig1%>%dplyr::filter(hypo=="full_overlap"), aes(x=eye_resp_match, y=mean_porp, fill = eye_resp_match)) + 
+    geom_bar(stat="identity", linewidth=2, position=position_dodge(width = .9),width=.5,alpha=0.4) + 
+    geom_hline(yintercept = 50, color="brown1",linetype="dashed",linewidth=1.5, alpha=.8)+
+    #change y label and limits
+    scale_y_continuous(name="% Trials",limits = c(0,100))+
+    scale_x_discrete(name="Explicit - Ocular")+
+    #change legend labels
+    scale_fill_manual(values = c("#CCCCCC","#707070"))+
+    theme_classic()+
+    theme(axis.text.y =element_text(size=14),
+          axis.title.y=element_text(size=16,face="bold"),
+          axis.text.x =element_text(size=14), 
+          axis.title.x=element_text(size=16,face="bold"),
+          legend.position = "none"
+    )
+)
+
+ # ggsave(filename=file.path(path_export_main_pics,"plot_fig_1C_no_overlap.pdf"),plot=plot_fig_1C_no_overlap,width=12,height=16,dpi=600, units="cm",device = "pdf")
+ # 
+ #  ggsave(filename=file.path(path_export_main_pics,"plot_fig_1C_partial_overlap.pdf"),plot=plot_fig_1C_partial_overlap,width=12,height=16,dpi=600, units="cm",device = "pdf")
+ # 
+ #  ggsave(filename=file.path(path_export_main_pics,"plot_fig_1C_full_overlap.pdf"),plot=plot_fig_1C_full_overlap,width=12,height=16,dpi=600, units="cm",device = "pdf")
+```
+
+
+## Fig 2
+
+### Figure 2A right: Gaze follows explicit response-ggpaired
+``` {r prep data for looking at  gaze follows prediction  ggpaired (pr)}
+#summarizing per trial (pt) and then summing across trials (may be more robust to outliers)
+mean_gz_by_pred<-mean_gz_prereg_csv%>%
+  dplyr::filter(exp_name%in%c("Exp. 1", "Exp. 2"))%>%
+  dplyr::group_by(exp_name,sub_name,QuestionResult)%>%
+  dplyr::summarize(lo_ci=CI(m_gz)[3],hi_ci=CI(m_gz)[1],mean_gz=CI(m_gz)[2])
+
+```
+
+```{r viz gaze follows prediction  ggpaired,fig.show="hold", out.width="50%"}
+## plotting paired- for each experiment
+
+#Exp 1!
+(
+  plot_2b_right<-
+    ggpaired(data =mean_gz_by_pred%>%dplyr::filter(exp_name=="Exp. 1"),
+             x="QuestionResult", y="mean_gz", id="sub_name", fill="QuestionResult" , line.color = "lightgrey",line.size = .2)+
+    # scale_x_discrete(name= "Prediction",labels=c("L","R"))+
+    scale_x_discrete(name= "",labels=c("L","R"))+
+
+    ylab("normalized gaze X-axis (z-score)")+
+    scale_fill_manual(values=c("plum4","seagreen4"),labels=c("left","right"),name= "Prediction")+
+    # ggtitle("Gaze by Prediction (per trial)",
+    #         subtitle=sprintf("p: %.3f Cohen's d: %.3f", t.test(data=mean_gz_by_pred, mean_gz~QuestionResult, paired=TRUE)$p.val, 
+    #                          cohens_d(data=mean_gz_by_pred%>%ungroup(), mean_gz~QuestionResult, paired=TRUE)$effsize))+
+    ylim(c(-.95,.9))+
+    theme_classic()+
+    theme(axis.title.y = element_blank(),
+          axis.title.x = element_text(size = 14,face="bold"),
+          axis.text.x = element_text(size = 14,angle=0),
+          axis.text.y = element_blank(),
+            # legend.position = "right",
+          legend.position = "none",
+          )
+)
+
+
+#Exp 2!
+(
+  plot_2c_right<-
+    ggpaired(data =mean_gz_by_pred%>%dplyr::filter(exp_name=="Exp. 2"),
+             x="QuestionResult", y="mean_gz", id="sub_name", fill="QuestionResult",line.color = "lightgrey",alpha=.1,line.size = .2 )+
+    scale_x_discrete(name= "Prediction",labels=c("L","R"))+
+    ylab("normalized gaze X-axis (z-score)")+
+    scale_fill_manual(values=c("plum4","seagreen4"),labels=c("left","right"),name= "Prediction")+
+    ylim(c(-.95,.9))+
+    theme_classic()+
+    theme(axis.title.y = element_blank(),
+          axis.title.x = element_text(size = 14,face="bold"),
+          # axis.title.y = element_text(size = 14,face="bold"),
+          axis.text.x = element_text(size = 14,angle=0),
+          axis.text.y = element_blank(),
+          # legend.position = "right",
+          legend.position = "none",
+
+          )
+)
+
+p_built_exp1 <- ggplot_build(plot_2b_right)
+p_built_exp2 <- ggplot_build(plot_2c_right)
+
+# Extract x-axis limits
+y_limits_exp1 <- p_built_exp1$layout$panel_params[[1]]$y.range
+y_limits_exp2 <- p_built_exp2$layout$panel_params[[1]]$y.range
+
+```
+
+```{r get summary stats of gaze by prediction}
+
+#for each experiment seperately
+smry_stats_mean_gz_by_pred<-mean_gz_by_pred%>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  dplyr::mutate(diff_gz=mean_gz-first(mean_gz))%>%
+  dplyr::filter(diff_gz!=0)%>%
+  dplyr::group_by(exp_name)%>%
+  dplyr::summarise(mean_diff=CI(diff_gz)[2],lo_ci=CI(diff_gz)[3],hi_ci=CI(diff_gz)[1],
+                   t=t.test(diff_gz)$statistic,df=t.test(diff_gz)$parameter, p.val=t.test(diff_gz)$p.value, ES=one_sample_ttest_cohen_d(diff_gz))
+
+
+
+
+
+knitr::kable(smry_stats_mean_gz_by_pred,
+             digits=2,caption = "Diff gaze direction by prediction  per experiment (pre-reg)")
+
+```
+
+### Figure 2b left: Gaze follows explicit response-timecourse
+```{r prep data for vizulization of short time courses splitting trials by PREDICTION}
+# binning values used for plotting time course of EM (this requires slim_trkr_prereg_csv)
+#single subject
+tmcrs_gz_by_pred_df<-slim_trkr_prereg_csv%>%
+  dplyr::group_by(exp_name,sub_name,TrialNumber)%>%
+  dplyr::mutate(bin_ind=findInterval(rel_time_trial,tmcrs_bin_val_shrt))%>%
+  dplyr::group_by(exp_name,sub_name,TrialNumber,bin_ind,QuestionResult)%>%
+  dplyr::summarize(m_bin_val=mean(z_gz,na.rm = TRUE))%>%
+  dplyr::group_by(exp_name,sub_name,QuestionResult,bin_ind)%>%
+  dplyr::filter(!is.na(m_bin_val))%>%
+  dplyr::group_by(exp_name,sub_name,QuestionResult,bin_ind)%>%
+  dplyr::summarise(m_bin=mean(m_bin_val),
+                   lo_ci=CI(m_bin_val)[3],
+                   hi_ci=CI(m_bin_val)[1],
+                   count=n())
+
+# group-all
+tmcrs_gz_by_pred_grp_df<-tmcrs_gz_by_pred_df%>%
+  dplyr::group_by(exp_name,QuestionResult,bin_ind)%>%
+  dplyr::summarize(lo_ci=CI(m_bin)[3],hi_ci=CI(m_bin)[1],m_bin=CI(m_bin)[2])
+```
+
+```{r vizulization of short time courses splitting trials by PREDICTION}
+### Exp. 1
+( 
+  plot_2b_left<-ggplot(data=tmcrs_gz_by_pred_grp_df%>%dplyr::filter(exp_name=="Exp. 1"), aes(x=(bin_ind),y=m_bin, color=QuestionResult))+
+    geom_line()+
+    geom_point()+
+    geom_ribbon(aes(ymin=lo_ci ,ymax=hi_ci, fill=QuestionResult),alpha=.7,color=NA)+
+    scale_fill_manual(name= "Prediction",values=c("plum4","seagreen4"),labels=c("left","right"))+
+    scale_color_manual(name= "Prediction",values=c("plum4","seagreen4"),labels=c("left","right"))+
+    geom_line(data=tmcrs_gz_by_pred_df%>%filter(QuestionResult=="left")%>%dplyr::filter(exp_name=="Exp. 1"),aes(x=as.numeric(bin_ind),y=m_bin, group=sub_name),color="plum3",alpha=.3)+
+    geom_line(data=tmcrs_gz_by_pred_df%>%filter(QuestionResult=="right")%>%dplyr::filter(exp_name=="Exp. 1"),aes(x=as.numeric(bin_ind),y=m_bin, group=sub_name),color="seagreen3",alpha=.3)+
+    geom_hline(yintercept = 0, color="black",linetype="dashed")+
+    # scale_x_continuous(name="Time [msec]",breaks=c(0,unique(tmcrs_gz_by_pred_df$bin_ind)),labels=tmcrs_bin_val_shrt)+
+
+    # scale_x_continuous(name="Time [msec]",breaks=c(0,unique(tmcrs_gz_by_pred_df$bin_ind)),labels=tmcrs_bin_val_shrt_labels)+
+    scale_x_continuous(name="",breaks=c(0,unique(tmcrs_gz_by_pred_df$bin_ind)),labels=tmcrs_bin_val_shrt_labels)+
+
+    labs(y= "Exp. 1",
+         # labs(y= " Gaze Direction \n \u2190  left               right \u2192",
+         x="")+
+    ylim(c(-.95,.9))+
+    theme_classic()+
+    theme(axis.title.x = element_text(size = 14,face="bold"),
+          axis.title.y = element_text(size = 14,face="bold"),
+          axis.text.x = element_text(size = 14,angle=0),
+          axis.text.y = element_text(size = 10,angle=0),
+          legend.title = element_text(size = 14,face="bold"),
+          legend.text = element_text(size = 12,face="bold"),
+           legend.position = "none",
+          # legend.position = "top"
+          )
+)
+
+### Exp. 2
+( 
+  plot_2c_left<-ggplot(data=tmcrs_gz_by_pred_grp_df%>%dplyr::filter(exp_name=="Exp. 2"), aes(x=(bin_ind),y=m_bin, color=QuestionResult))+
+    geom_line()+
+    geom_point()+
+    geom_ribbon(aes(ymin=lo_ci ,ymax=hi_ci, fill=QuestionResult),alpha=.7,color=NA)+
+    scale_fill_manual(name="Response",values=c("plum4","seagreen4"))+
+    scale_color_manual(name="Response",values=c("plum4","seagreen4"))+
+    geom_line(data=tmcrs_gz_by_pred_df%>%filter(QuestionResult=="left")%>%dplyr::filter(exp_name=="Exp. 2"),aes(x=as.numeric(bin_ind),y=m_bin, group=sub_name),color="plum3",alpha=.3)+
+    geom_line(data=tmcrs_gz_by_pred_df%>%filter(QuestionResult=="right")%>%dplyr::filter(exp_name=="Exp. 2"),aes(x=as.numeric(bin_ind),y=m_bin, group=sub_name),color="seagreen3",alpha=.3)+
+    geom_hline(yintercept = 0, color="black",linetype="dashed")+
+
+    scale_x_continuous(name="Time [msec]",breaks=c(0,unique(tmcrs_gz_by_pred_df$bin_ind)),labels=tmcrs_bin_val_shrt_labels)+
+
+ labs(y= "Exp. 2",
+     # labs(y= " Gaze Direction \n \u2190  left               right \u2192",   
+     x="Time [msec]")+
+    ylim(c(-.95,.9))+
+theme_classic()+
+    theme(axis.title.x = element_text(size = 14,face="bold"),
+          axis.title.y = element_text(size = 14,face="bold"),
+          axis.text.x = element_text(size = 14,angle=0),
+          axis.text.y = element_text(size = 10,angle=0),
+          legend.position = "none")
+)
+
+
+p_built_exp1 <- ggplot_build(plot_2b_right)
+p_built_exp2 <- ggplot_build(plot_2c_right)
+
+# Extract x-axis limits
+y_limits_exp1 <- p_built_exp1$layout$panel_params[[1]]$y.range
+y_limits_exp2 <- p_built_exp2$layout$panel_params[[1]]$y.range
+
+p_built_tmcrs_exp1 <- ggplot_build(plot_2b_left)
+p_built_tmcrs_exp2 <- ggplot_build(plot_2c_left)
+
+# Extract x-axis limits
+y_limits_tmcrs_exp2 <- p_built_tmcrs_exp2$layout$panel_params[[1]]$y.range
+
+```
+
+Now let's try to combine timecourse and ggpaired using cowplot. 
+
+```{r combine gz by pred timecourse and ggpaired exp 1 }
+(
+  plot_fig_2B<-plot_grid(plot_2b_left,plot_2b_right, nrow=1,rel_widths = c(2,1),align="v") 
+)
+
+# ggsave(filename=file.path(path_export_main_pics,"plot_fig_2B.pdf"),plot=plot_fig_2B,width=18,height=6,dpi=600, units="cm",device = "pdf")
+```
+
+
+```{r combine gz by pred timecourse and ggpaired exp 2 }
+(
+  plot_fig_2C<-plot_grid(plot_2c_left,plot_2c_right, nrow=1,rel_widths = c(4,1),align="v") 
+)
+
+# ggsave(filename=file.path(path_export_main_pics,"plot_fig_2C.pdf"),plot=plot_fig_2C,width=24,height=8,dpi=600, units="cm",device = "pdf")
+```
+
+
+### Fig 2D Same/Diff Gaze & Explicit response
+
+Here we are looking at Same/Diff of the eye as binary response
+```{r prep data to look at convergence and divergence}
+## proportion of each of the categories per subject
+porp_eye_resp_same_sbs<-mean_gz_prereg_csv%>%
+  dplyr::filter(exp_name%in%c("Exp. 1", "Exp. 2"))%>%
+  dplyr::group_by(exp_name,sub_name,eye_resp_match)%>%
+  dplyr::summarise(count=n())%>%
+  dplyr::group_by(sub_name)%>%
+  dplyr::mutate(tot_count=sum(count),
+                porp=(count/tot_count)*100)
+
+#getting across experiments
+porp_eye_resp_same_acrss_exp<-porp_eye_resp_same_sbs%>%
+  dplyr::group_by(eye_resp_match)%>%
+  dplyr::summarise(mean_porp=CI(porp)[2],lo_ci=CI(porp)[3],hi_ci=CI(porp)[1])%>%
+  dplyr::mutate(exp_name="Exp.1&2")
+
+#per experiment
+porp_eye_resp_same_grp_by_exp<-porp_eye_resp_same_sbs%>%
+  dplyr::group_by(exp_name,eye_resp_match)%>%
+  dplyr::summarise(mean_porp=CI(porp)[2],lo_ci=CI(porp)[3],hi_ci=CI(porp)[1])
+
+#binding
+porp_eye_resp_same_grp<-bind_rows(porp_eye_resp_same_grp_by_exp,porp_eye_resp_same_acrss_exp)
+
+knitr::kable(porp_eye_resp_same_grp,digits=2,caption = "Convergence/divergence of Eye & Response")
+# #porportion of same
+# porp_eye_resp_same_sbs<-join_mean_gz_tbt%>%
+#   group_by(sub_name,eye_resp_match)%>%
+#   dplyr::summarise(count=n())%>%
+#   dplyr::group_by(sub_name)%>%
+#   dplyr::mutate(porp=count/sum(count))
+
+
+```
+
+
+
+
+```{r visualize explicit and eye response same_diff barplot}
+
+
+(
+  plot_fig_2D<-ggplot(porp_eye_resp_same_acrss_exp, aes(x=eye_resp_match, y=mean_porp, fill = eye_resp_match)) + 
+    geom_bar(stat="identity", linewidth=2, position=position_dodge(width = .9),width=.5,alpha=0.4) + 
+    
+     geom_linerange(data=porp_eye_resp_same_acrss_exp,aes(x=eye_resp_match,ymin=lo_ci,ymax=hi_ci), position=position_dodge(width = .9),linewidth=1.5)+
+    geom_jitter(data=porp_eye_resp_same_sbs,aes(y=porp,x=eye_resp_match),position=position_jitterdodge(jitter.width=0.15, dodge.width = .9), size = 3,alpha=.3)+
+    geom_hline(yintercept = 50, color="brown1",linetype="dashed",linewidth=1.5, alpha=.8)+
+
+    #change y label and limits
+    scale_y_continuous(name="% Trials",limits = c(0,100))+
+    scale_x_discrete(name="Explicit - Ocular",labels=c("same"="Converge", "diff"="Diverge" ),limits=c("same","diff"))+
+    #change legend labels
+    scale_fill_manual(values = c("#CCCCCC","#707070"))+
+    theme_classic()+
+    theme(axis.text.y =element_text(size=14),
+          axis.title.y=element_text(size=16,face="bold"),
+          axis.text.x =element_text(size=14), 
+          axis.title.x=element_text(size=16,face="bold"),
+          legend.position = "none"
+    )
+)
+
+
+# ggsave(filename=file.path(path_export_main_pics,"plot_fig_2B_only_line.pdf"),plot=plot_fig_2D,width=12,height=16,dpi=600, units="cm",device = "pdf")
+```
+
+We see that around 70% explicit & eye responses are the same, but there is also considerable between subject variance
+
+In a way this is similar to our finding that  Gaze Prediction values are robustly at subject-level  positive.
+
+### Fig 2D: sRW trajectory and Gaze Prediction
+
+First we'll do the pre-reg analysis (individual Ss correlation)
+Here we are using sticky RW model. See below for use of pre-registered RW model
+
+```{r prep data for correlation of gaze prediction and sRW traj}
+
+# getting correlation of gaze & RW trajectory (this is done on trial by-trial basis ) per subject
+corr_gz_rws_traj_ps<-mean_gz_prereg_csv%>%
+  dplyr::filter(exp_name!="Exp. 3")%>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  drop_na(expl.RWS.prev_delta,expl.RWS.dist_v_5)%>%
+  dplyr::summarize(
+    # corr pred_gz& previous trial's PE
+    r.da_pred_gz=rcorr(expl.RWS.prev_delta,m_pred_gz)$r[2],pval.da_pred_gz=rcorr(expl.RWS.prev_delta,m_pred_gz)$P[2], 
+    
+    #  gaze2prediction & dist of v from 0.5
+    r.distv5_pred_gz=rcorr(expl.RWS.dist_v_5,m_pred_gz)$r[2],pval.distv5_pred_gz=rcorr(expl.RWS.dist_v_5,m_pred_gz)$P[2], # corr pred_gz 
+    
+    #  gaze2prediction & P Choice
+    r.PC_pred_gz=rcorr(expl.RWS.p_choice,m_pred_gz)$r[2],pval.PC_pred_gz=rcorr(expl.RWS.p_choice,m_pred_gz)$P[2] 
+  )
+
+#pivoting to long (this is done very rudimentary)
+
+#doing for pval
+p_val_long_rws<-corr_gz_rws_traj_ps%>%
+  select(c(exp_name,sub_name,starts_with("pval")))%>%
+  pivot_longer(!c(exp_name,sub_name),names_to = "vars_compared",names_prefix = "pval.",values_to="val")%>%
+  dplyr::mutate(value_type="p.val")%>%
+  dplyr::mutate(is_sig=if_else(val<.05,1,0))
+
+
+# doing for corr
+corr_val_long_rws<-corr_gz_rws_traj_ps%>%
+  select(c(exp_name,sub_name,starts_with("r")))%>%
+  pivot_longer(!c(exp_name,sub_name),names_to = "vars_compared",names_prefix = "r.",values_to="val")%>%
+  dplyr::mutate(value_type="corr")
+
+# getting numbeer of sig subjects
+sum_p_val_rws=p_val_long_rws%>%
+  group_by(exp_name,vars_compared)%>%
+  dplyr::summarise(n_sig=sum(is_sig,na.rm = TRUE),total_sub=n())
+
+#joining
+sum_corr_gz_rws_traj<-corr_val_long_rws%>%
+  group_by(exp_name,vars_compared)%>%
+  dplyr::summarise(mean_corr=CI(val)[2],lo_corr=CI(val)[1],hi_corr=CI(val)[3],
+                   group_t_statistic=t.test(val)$statistic, group_pval=t.test(val)$p.value,
+                   ES=one_sample_ttest_cohen_d(val))%>%
+  full_join(.,sum_p_val_rws,by=c("exp_name","vars_compared"))
+```
+
+print stats of correlation
+
+```{r print stats of gz and rws traj}
+knitr::kable(sum_corr_gz_rws_traj%>%dplyr::filter(vars_compared=="PC_pred_gz"),digits = 3, caption = "correlation EM and learning metric RWS ")
+```
+Now let's make the figures
+
+```{r Fig 2D visualize distribution of correlation value, fig.show="hold", out.width="50%"}
+#all subjects
+corr_pc_gz2pred_rws<-corr_val_long_rws%>%
+  dplyr::filter(vars_compared=="PC_pred_gz")%>%
+  dplyr::filter(value_type=="corr")
+
+grp_corr_pc_gz2pred_rws<-corr_pc_gz2pred_rws%>%
+  dplyr::group_by(exp_name)%>%
+  dplyr::summarize(grp_mean=CI(val)[2],lo_ci=CI(val)[1],hi_ci=CI(val)[3])
+
+(
+  plot_fig_2D_right<-
+    ggplot(data=corr_pc_gz2pred_rws%>%dplyr::filter(exp_name!="Exp. 3"),aes(y=val,x=1))+
+        xlim(c(.5,1.5))+
+    geom_boxplot(outlier.shape = NA,linewidth=1,color="black",size=.5,width=.4)+ #,width=.02
+    geom_point(color="#707070",position = position_jitter(width=.1),size=3, alpha = .8)+
+        geom_hline(yintercept = 0, color="brown1",linetype="dashed",linewidth=1.5)+
+ylab(expression(atop(rho, "\n Gaze & P. Choice")))+
+    # ylab(paste(" \u03C1","Gaze & P. Choice"))+
+    ylim(c(-.3,.5))+
+    theme_classic()+
+    theme(axis.title.x = element_blank(),
+          axis.title.y = element_text(size = 16,face="bold"),
+          axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          axis.text.y = element_text(size = 14,angle=0),
+          strip.text = element_text(size = 16,face="bold"),
+          strip.background = element_blank(),
+          legend.position = "none"
+    )+
+    facet_wrap(~exp_name)
+)
+
+# ggsave(filename=file.path(path_export_main_pics,"plot_fig_2D_240624.pdf"),plot=plot_fig_2D_right,width=12,height=16,dpi=600, units="cm",device = "pdf")
+```
+
+```{r analyze correlation using lme4 RWS}
+
+#full model
+pc_bygz_pred_full_mdl<-expl.RWS.p_choice~m_pred_gz+(1|sub_name)
+pc_bygz_pred_full_mdl.res=lmer(pc_bygz_pred_full_mdl,data=mean_gz_prereg_csv,REML = FALSE)
+
+# remove gz prediction
+pc_bygz_pred_null_mdl<-expl.RWS.p_choice~1+(1|sub_name)
+pc_bygz_pred_null_mdl.res=lmer(pc_bygz_pred_null_mdl,data=mean_gz_prereg_csv,REML = FALSE)
+
+#test with anova
+pc_bygz_pred_aov_rws_res<-anova(pc_bygz_pred_full_mdl.res,pc_bygz_pred_null_mdl.res)%>%tidy()
+
+kable(pc_bygz_pred_aov_rws_res,digits=3,caption ="RWS corr Gaze Prediction and P. choice using mixed models")
+```
+
+
+### Fig 2C-  Plotting trajectory of individual Ss
+
+``` {r prep data to plot tbt traj}
+
+rand_sub_name<-"sub3_biu_explor"
+
+## extracting his data
+rand_sub_RWS_traj_df<-mean_gz_prereg_csv%>%
+  dplyr::filter(sub_name==rand_sub_name)
+
+##rescaling Gaze2Prediction
+rand_sub_RWS_traj_df<-rand_sub_RWS_traj_df%>%
+  dplyr::group_by(sub_name)%>%
+  dplyr::mutate(`Gaze Prediction`=rescale_range(m_pred_gz))%>%
+  dplyr::relocate(`Gaze Prediction`,.after="m_pred_gz")%>%
+  dplyr::mutate(`P. Choice`=expl.RWS.p_choice)
+
+
+
+rand_sub_RWS_traj_long<-rand_sub_RWS_traj_df%>%
+  dplyr::select(sub_name,TrialNumber,`Gaze Prediction`, `P. Choice`)%>%
+  dplyr::rowwise()%>%
+  pivot_longer(c(`Gaze Prediction`, `P. Choice`), values_to="value", names_to="measure")
+```
+
+###
+
+```{r plotting trajectory of Pc and gaze random subject}
+
+
+ 
+(
+  plot_fig_2C_left<-ggplot(data= rand_sub_RWS_traj_long,aes(x=TrialNumber))+
+    # geom_point(aes(y=value,color=measure))+
+    geom_line(aes(y=value,color=measure),alpha=.7,linewidth=1.1)+
+    geom_point(aes(y=value,color=measure),alpha=.3)+
+    geom_vline(xintercept = c(32,64,96,128),alpha=.5,linetype="dashed")+
+    scale_color_manual(values=rev(color_vec_eye_expl_source) )+
+    # scale_color_discrete( labels=c("\u03B4","cue congruent gaze"))+
+    ylab("Value")+
+    xlab("Trial Number")+
+    scale_x_continuous(expand=c(0,0),breaks=c(0,40,80,120,160),labels=c(as.character(c(0,40,80,120,160))))+
+    scale_y_continuous(expand=c(0,0))+
+
+    theme_classic()+
+    # ylim(c(0,1))+
+    # xlim(c(0,160))+
+    # coord_cartesian(xlim = c(0, NA), ylim = c(0, NA)) +  # Adjust viewport without dropping data
+    theme(axis.title.x = element_text(size = 16,face="bold"),
+          axis.title.y = element_text(size = 16,face="bold"),
+          axis.text.x = element_text(size = 14),
+          axis.text.y = element_text(size = 14),
+          legend.position = "top",
+          legend.title = element_blank(),
+          legend.direction = "horizontal",
+          legend.text = element_text(size = 14,face="bold"),
+          # plot.margin = unit(c(0, 0, 0, 0), "cm")
+          # legend.position = "none"
+    )
+  
+  
+)  
+
+# ggsave(filename=file.path(path_export_main_pics," plot_fig_2C_left.pdf"),plot= plot_fig_2C_left,width=24,height=12,dpi=600, units="cm",device = "pdf")
+
+```
+
+## SM Figure 3 & S4
+### Fig S3: Individual Subject Gaze by Prediction 
+```{r prep data for SM fig 3}
+#fix up subjects name
+mean_gz_by_pred<-mean_gz_by_pred%>%
+  dplyr::mutate(new_sub_name=sprintf("Sub %.2d",parse_number(sub_name)))
+
+( plot_SM_fig_S3<-
+    ggplot(data=mean_gz_by_pred,aes(x=mean_gz,y=new_sub_name,color=as.factor(QuestionResult)))+ #y=fct_reorder(sub_name, desc(sub_num)
+    geom_pointrange(aes(xmin=lo_ci,xmax=hi_ci),position=position_dodge(width = .3))+
+    geom_vline(xintercept = 0,color="brown1",linetype="dashed")+
+    scale_color_manual(name="Prediction",values=c("plum4","seagreen4"),labels=c("left","right"))+
+    facet_col(~exp_name,scales = "free_y")+
+    ylab("Subject")+
+    xlab("Gaze Direction")+
+    theme_classic()+
+    theme(axis.title.x = element_text(size = 16,face="bold"),
+          axis.title.y = element_text(size = 16,face="bold"),
+          axis.text.x = element_text(size = 14,angle=0),
+          axis.text.y = element_text(size = 8,angle=0),
+          )
+  # ggtitle("Gaze by Prediction ")
+)
+# ggsave(plot = plot_SM_fig_S3,filename = file.path(path_export_sm_pics,"SM_fig_S3.jpg"))
+
+```
+
+Now let's do the stats
+```{r run stats of individual subjects}
+
+gz_by_pred_stats<-mean_gz_prereg_csv%>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  dplyr::summarise(p=t.test(m_gz~QuestionResult)$p.value,
+                   is_sig=if_else(p<.05,1,0))
+
+gz_by_pred_stats_per_exp<-gz_by_pred_stats%>%
+  dplyr::group_by(exp_name)%>%
+  dplyr::summarise(n_sig=sum(is_sig), total_n=n())
+
+kable(gz_by_pred_stats_per_exp,caption = "Gaze by Prediction, single ss signfiacne")
+
+```
+F#$%ing amazing
+
+
+
+### SM Fig 4 convergence and dvergence per experiment
+
+```{r prep data to look at convergence and divergence per exp all exp}
+## proportion of each of the categories per subject
+porp_eye_resp_same_sbs_all_exp<-mean_gz_prereg_csv%>%
+  dplyr::group_by(exp_name,sub_name,eye_resp_match)%>%
+  dplyr::summarise(count=n())%>%
+  dplyr::group_by(sub_name)%>%
+  dplyr::mutate(tot_count=sum(count),
+                porp=(count/tot_count)*100)
+
+
+
+#per experiment
+porp_eye_resp_same_grp_by_exp<-porp_eye_resp_same_sbs_all_exp%>%
+  dplyr::group_by(exp_name,eye_resp_match)%>%
+  dplyr::summarise(mean_porp=CI(porp)[2],lo_ci=CI(porp)[3],hi_ci=CI(porp)[1])
+
+```
+
+```{r viz convergence and divergence per exp all exp}
+
+(
+  plot_SM_fig_S4<-ggplot(porp_eye_resp_same_grp_by_exp, aes(x=eye_resp_match, y=mean_porp, fill = eye_resp_match)) + 
+    geom_bar(stat="identity", linewidth=2, position=position_dodge(width = .9),width=.5, color="black",alpha=0.4) + 
+    
+    geom_errorbar(data=porp_eye_resp_same_grp_by_exp,aes(x=eye_resp_match,ymin=lo_ci,ymax=hi_ci), position=position_dodge(width = .9),width=.4,linewidth=1.5,)+
+    geom_jitter(data=porp_eye_resp_same_sbs_all_exp,aes(y=porp,x=eye_resp_match),position=position_jitterdodge(jitter.width=0.2, dodge.width = .9), size = 3,alpha=.5)+ 
+    geom_hline(yintercept = 50, color="brown1",linetype="dashed",linewidth=1.5, alpha=.8)+
+    
+    #change y label and limits
+    scale_y_continuous(name="% Trials",limits = c(0,100))+
+    scale_x_discrete(name="Explicit - Ocular",labels=c("same"="Converge", "diff"="Diverge" ),limits=c("same","diff"))+
+    #change legend labels
+    scale_fill_manual(values = c("#CCCCCC","#707070"))+
+    theme_classic()+
+    theme(axis.text.y =element_text(size=14),
+          axis.title.y=element_text(size=16,face="bold"),
+          axis.text.x =element_text(size=14), 
+          axis.title.x=element_text(size=16,face="bold"),
+          legend.position = "none",
+          strip.text = element_text(size = 16,face="bold"),
+          strip.background = element_blank()
+
+    )+
+    facet_wrap(~exp_name)
+)
+
+# ggsave(plot = plot_SM_fig_S4,filename = file.path(path_export_sm_pics,"SM_fig_S4_converge_diverge.jpg"))
+
+```
+
+
+
+
+
+### SM Fig S6  P. Choice from RW & corr to Gaze Prediction
+```{r prep data for correlation of gaze prediction and RW traj}
+
+# getting correlation of gaze & RW trajectory (this is done on trial by-trial basis ) per subject
+corr_gz_rw_traj_ps<-mean_gz_prereg_csv%>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  dplyr::summarize(
+    # corr pred_gz& previous trial's PE
+    r.da_pred_gz=rcorr(expl.RW.prev_delta,m_pred_gz)$r[2],pval.da_pred_gz=rcorr(expl.RW.prev_delta,m_pred_gz)$P[2], 
+    
+    #  gaze2prediction & dist of v from 0.5
+    r.distv5_pred_gz=rcorr(expl.RW.dist_v_5,m_pred_gz)$r[2],pval.distv5_pred_gz=rcorr(expl.RW.dist_v_5,m_pred_gz)$P[2], # corr pred_gz 
+    
+    #  gaze2prediction & P Choice
+    r.PC_pred_gz=rcorr(expl.RW.p_choice,m_pred_gz)$r[2],pval.PC_pred_gz=rcorr(expl.RW.p_choice,m_pred_gz)$P[2] 
+  )
+
+
+#pivoting to long (this is done very rudimentary)
+
+#doing for pval
+p_val_long_rw<-corr_gz_rw_traj_ps%>%
+  select(c(exp_name,sub_name,starts_with("pval")))%>%
+  pivot_longer(!c(exp_name,sub_name),names_to = "vars_compared",names_prefix = "pval.",values_to="val")%>%
+  dplyr::mutate(value_type="p.val")%>%
+  dplyr::mutate(is_sig=if_else(val<.05,1,0))
+
+
+# doing for corr
+corr_val_long_rw<-corr_gz_rw_traj_ps%>%
+  select(c(exp_name,sub_name,starts_with("r")))%>%
+  pivot_longer(!c(exp_name,sub_name),names_to = "vars_compared",names_prefix = "r.",values_to="val")%>%
+  dplyr::mutate(value_type="corr")
+
+# getting numbeer of sig subjects
+sum_p_val_rw=p_val_long_rw%>%
+  group_by(exp_name,vars_compared)%>%
+  dplyr::summarise(n_sig=sum(is_sig),total_sub=n())
+
+#joining
+sum_corr_gz_rw_traj<-corr_val_long_rw%>%
+  group_by(exp_name,vars_compared)%>%
+  dplyr::summarise(mean_corr=CI(val)[2],lo_corr=CI(val)[1],hi_corr=CI(val)[3],
+                   group_t_statistic=t.test(val)$statistic, group_pval=t.test(val)$p.value,
+                   ES=one_sample_ttest_cohen_d(val))%>%
+  full_join(.,sum_p_val_rw,by=c("exp_name","vars_compared"))
+```
+
+print stats of pre-reg analysis
+```{r print stats of gz and rw traj}
+knitr::kable(sum_corr_gz_rw_traj,digits = 3, caption = "correlation EM and learning metric RW (PreReged)")
+```
+
+
+
+```{r analyze correlation using lme4 RW}
+
+#full model
+pc_bygz_pred_full_mdl<-expl.RW.p_choice~m_pred_gz+(1|sub_name)
+pc_bygz_pred_full_mdl.res_rw=lmer(pc_bygz_pred_full_mdl,data=mean_gz_prereg_csv,REML = FALSE)
+
+# remove gz prediction
+pc_bygz_pred_null_mdl<-expl.RW.p_choice~1+(1|sub_name)
+pc_bygz_pred_null_mdl.res_rw=lmer(pc_bygz_pred_null_mdl,data=mean_gz_prereg_csv,REML = FALSE)
+
+#test with anova
+pc_bygz_pred_aov_res_rw<-anova(pc_bygz_pred_full_mdl.res_rw,pc_bygz_pred_null_mdl.res_rw)%>%tidy()
+
+kable(pc_bygz_pred_aov_res_rw,digits=3,caption="RW")
+```
+
+
+So lme gives simialr signfiacnt results using RW model. 
+
+
+```{r viz figure S6 gz and P choice correlation}
+
+corr_pc_gz2pred_rw<-corr_val_long_rw%>%
+  dplyr::filter(vars_compared=="PC_pred_gz")%>%
+  dplyr::filter(value_type=="corr")
+
+grp_corr_pc_gz2pred_rw<-corr_pc_gz2pred_rw%>%
+  dplyr::group_by(exp_name)%>%
+  dplyr::summarize(grp_mean=CI(val)[2],lo_ci=CI(val)[1],hi_ci=CI(val)[3])
+
+(
+  plot_SM_fig_S6<-
+    ggplot(data=corr_pc_gz2pred_rw%>%dplyr::filter(exp_name!="Exp. 3"),aes(y=val,x=1))+
+    # xlim(c(.8,1.2))+
+    geom_violin(alpha=.4,scale="width")+
+    # geom_boxplot(aplha=.4)+ #,width=.02
+    geom_pointrange (data=grp_corr_pc_gz2pred_rw%>%dplyr::filter(exp_name!="Exp. 3"), aes(y=grp_mean,ymin=lo_ci, ymax=hi_ci),size=3,fatten=1.5, color="black")+
+    geom_point(color="darkgrey",position = position_jitter(width=.05),size=2.5, alpha = .6)+
+    
+    # geom_hline(yintercept = 0, color="red",linetype="solid",size=1.5)+
+    geom_hline(yintercept = 0, color="brown1",linetype="dashed")+
+ylab(expression(atop(rho, "\n Gaze & P. Choice")))+
+    # ylab(paste(" \u03C1","Gaze & P. Choice"))+
+    ylim(c(-.3,.5))+
+    
+    theme_classic()+
+    # coord_fixed(ratio = 4,xlim = c(0.8, 1.2))+
+    theme(axis.title.x = element_blank(),
+          axis.title.y = element_text(size = 16,face="bold"),
+          axis.text.x = element_blank(),
+          axis.text.y = element_text(size = 14,angle=0),
+          strip.text = element_text(size = 16,face="bold"),
+          legend.position = "none"
+    )+
+    facet_wrap(~exp_name)
+)
+
+# ggsave(filename=file.path(path_export_sm_pics,"plot_SM_fig_S6.png"),plot=plot_SM_fig_S6,dpi=600, units="cm",device = "png")
+
+```
+
+
+## Figure 3
+
+Examining confidence benchmarks
+
+### Panel A: Benchamrk 1  montonic rise in acc
+```{r prep data for benchmark 1 check if accuarcy increases with gaze2prediction}
+
+#add percentile 
+mean_gz_prereg_csv<-mean_gz_prereg_csv%>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  dplyr::mutate(tile_gz2pred=ntile(m_pred_gz,n_ptiles_gz2pred))%>%
+  dplyr::relocate(tile_gz2pred,.after = m_pred_gz)
+
+#get subject by subject
+sbs_acc_per_tile_gz2pred<-mean_gz_prereg_csv%>%
+  dplyr::group_by(exp_name,sub_name,tile_gz2pred)%>%
+  dplyr::summarize(m_actual_acc=mean(is_acc)*100,m_rule_acc=mean(resp_rule_acc)*100,m_gz2pred=mean(m_pred_gz),count=n())
+
+
+#group- all subjects
+grp_acc_per_tile_gz2pred<-sbs_acc_per_tile_gz2pred%>%
+  dplyr::group_by(exp_name,tile_gz2pred)%>%
+  dplyr::summarize(lo_ci_act_acc=CI(m_actual_acc)[1],hi_ci_act_acc=CI(m_actual_acc)[3],m_actual_acc=CI(m_actual_acc)[2],
+                   lo_ci_rule_acc=CI(m_rule_acc)[1],hi_ci_rule_acc=CI(m_rule_acc)[3],m_rule_acc=CI(m_rule_acc)[2])
+
+
+```
+
+```{r run prereg stats for benchmark 1}
+
+# getting correlation of gaze & ACC (this is done on trial by-trial basis ) per subject
+sbs_corr_bench1_acc_gz_pred<-sbs_acc_per_tile_gz2pred%>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  dplyr::summarize(
+    # corr rule acc & gz prediction
+    r.acc_gz_pred=rcorr(m_rule_acc,m_gz2pred,type = "spearman")$r[2],pval.acc_gz_pred=rcorr(m_rule_acc,m_gz2pred,type = "spearman")$P[2]
+  )%>%
+  dplyr::mutate(is_sig=if_else(pval.acc_gz_pred<.05,1,0))
+
+
+
+#joining
+sum_stats_corr_bench1_acc_gz_pred <-sbs_corr_bench1_acc_gz_pred%>%
+  group_by(exp_name)%>%
+  dplyr::summarise(mean_corr=CI(r.acc_gz_pred)[2],lo_corr=CI(r.acc_gz_pred)[1],hi_corr=CI(r.acc_gz_pred)[3],
+                   group_t_statistic=t.test(r.acc_gz_pred)$statistic, group_pval=t.test(r.acc_gz_pred)$p.value,
+                   ES=one_sample_ttest_cohen_d(r.acc_gz_pred))
+
+knitr::kable(sum_stats_corr_bench1_acc_gz_pred,digits=4, caption = "Conf benchmark 1 distribution of spearman correlation")
+```
+
+So these results aren't super strong. But this is actually a pretty poor way of testing this hypothesis. 
+
+Let's try now using a logistic regression approach
+
+```{r test confidence benchmark 1 with glmer}
+## RE: geberal intercept
+rule_acc_by_gz_pred_frmla<-resp_rule_acc~m_pred_gz+(1|sub_name)
+
+rule_acc_by_gz_pred.res_exp1=glmer(rule_acc_by_gz_pred_frmla,data=mean_gz_prereg_csv%>%dplyr::filter(exp_name=="Exp. 1"),
+                                   family = binomial)%>%
+  broom.mixed::tidy()%>%
+  mutate(exp_name="Exp. 1")
+
+
+rule_acc_by_gz_pred.res_exp2=glmer(rule_acc_by_gz_pred_frmla,data=mean_gz_prereg_csv%>%dplyr::filter(exp_name=="Exp. 2"),
+                                   family = binomial)%>%
+  broom.mixed::tidy()%>%
+  mutate(exp_name="Exp. 2")
+
+knitr::kable(bind_rows(rule_acc_by_gz_pred.res_exp1,rule_acc_by_gz_pred.res_exp2)%>%
+               dplyr::filter(!is.na(p.value)), digits = 5, caption="Conf benchmark 1 with glmer")
+
+```
+
+So this gives a really robust result that is also statistically much more appropriate. 
+
+Visualize Panel A: benchmark 1 (Right= Exp. 1 Left Exp. 2)
+
+```{r visualize Fig 3A benchmark 1 check if accuarcy increases with gaze2prediction, fig.show="hold", out.width="50%" }
+# plot rule acc  
+##Exp. 1
+(plot_fig_3A_exp1<-
+   ggplot(data=grp_acc_per_tile_gz2pred%>%dplyr::filter(exp_name=="Exp. 1"),aes(x=tile_gz2pred, y= m_rule_acc))+
+   geom_pointrange(aes(ymin=lo_ci_rule_acc,ymax=hi_ci_rule_acc),color="black",linewidth=1.5)+
+    geom_line(alpha=.8,linewidth=2,color="black")+
+   geom_point(size=3)+
+   # geom_ribbon(aes(ymin=lo_ci_rule_acc,ymax=hi_ci_rule_acc),fill="sandybrown", alpha=.2,  color=NA)+
+   
+   scale_x_continuous(name= ("Gaze Prediction"))+
+   scale_y_continuous(name=("% Correct"),limits = c(62,86))+
+   
+   theme_classic()+
+   theme(axis.title.x = element_text(size = 16,face="bold"),
+         axis.title.y = element_text(size = 16,face="bold"),
+         axis.text.x = element_text(size = 14,angle=0),
+         axis.text.y = element_text(size = 14,angle=0),
+         legend.position = "none"
+   )
+)
+
+##Exp. 2
+(plot_fig_3A_exp2<-
+    ggplot(data=grp_acc_per_tile_gz2pred%>%dplyr::filter(exp_name=="Exp. 2"),aes(x=tile_gz2pred, y= m_rule_acc))+
+    geom_pointrange(aes(ymin=lo_ci_rule_acc,ymax=hi_ci_rule_acc),color="black",linewidth=1.5)+
+    geom_line(alpha=.8,linewidth=2,color="black")+
+    geom_point(size=3)+
+    # geom_ribbon(aes(ymin=lo_ci_rule_acc,ymax=hi_ci_rule_acc),fill="sandybrown", alpha=.2,  color=NA)+
+    scale_x_continuous(name= ("Gaze Prediction"))+
+    scale_y_continuous(name=("% Correct"),limits = c(62,86))+
+    theme_classic()+
+    theme(axis.title.x = element_text(size = 16,face="bold"),
+          axis.title.y = element_text(size = 16,face="bold"),
+          axis.text.x = element_text(size = 14,angle=0),
+          axis.text.y = element_text(size = 14,angle=0),
+         
+          legend.position = "none"
+    )
+)
+
+# ggsave(filename=file.path(path_export_main_pics,"plot_fig_3A_exp1.pdf"),plot=plot_fig_3A_exp1,device = "pdf")
+# ggsave(filename=file.path(path_export_main_pics,"plot_fig_3A_exp2.pdf"),plot=plot_fig_3A_exp2,device = "pdf")
+```
+
+
+### Panel B: Benchmark 2 - folded X pattern
+
+We are  binning by expectation strength & rule accuracy 
+
+Here again we can do either with RW or RWS 
+
+#### Running with RWS
+```{r prep data to look at benchmark 2 of confidence using distV as proxy of evidence RWS}
+n_ptiles_dist_v<-6
+
+gz_by_distV_RWS_acc_df<-mean_gz_prereg_csv%>%
+  dplyr::group_by(exp_name,sub_name,resp_rule_acc)%>%
+  dplyr::mutate(dist_v_rule_acc_bin=ntile(expl.RWS.dist_v_5,n_ptiles_dist_v))%>% #binning according to RULE ACC
+  dplyr::relocate(dist_v_rule_acc_bin,.after="expl.RW.dist_v_5") %>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  dplyr::mutate(dist_v_bin=ntile(expl.RWS.dist_v_5,n_ptiles_dist_v))%>% #binning only according to V
+  dplyr::relocate(dist_v_bin,.after="dist_v_rule_acc_bin") 
+```
+
+
+```{r run prereg stats for Benchmark 2 using lme4 RWS }
+#here 
+#Exp 1
+bench2_full_frmla<-m_pred_gz~resp_rule_acc+dist_v_rule_acc_bin+resp_rule_acc:dist_v_rule_acc_bin+(1|sub_name)
+# bench2_full_frmla<-m_pred_gz~resp_rule_acc+expl.dist_v_5+resp_rule_acc:expl.dist_v_5+(1|sub_name)
+
+bench2_full_exp1.res_rws=lmer(bench2_full_frmla,data=gz_by_distV_RWS_acc_df%>%filter(exp_name=="Exp. 1"),REML = FALSE)
+
+
+
+# remove interaction term
+bench2_null_frmla<-m_pred_gz~resp_rule_acc+dist_v_rule_acc_bin+(1|sub_name)
+# bench2_null_frmla<-m_pred_gz~resp_rule_acc+expl.dist_v_5+(1|sub_name)
+
+bench2_null_exp1.res_rws=lmer(bench2_null_frmla,data=gz_by_distV_RWS_acc_df%>%filter(exp_name=="Exp. 1"),REML = FALSE)
+
+
+#test with anova
+bench2_aov_exp1_res_rws<-anova(bench2_full_exp1.res_rws,bench2_null_exp1.res_rws)%>%tidy()%>%mutate(exp = "Exp. 1")%>%dplyr::filter(!is.na(df))
+
+# Exp 2. 
+bench2_full_exp2.res_rws=lmer(bench2_full_frmla,data=gz_by_distV_RWS_acc_df%>%filter(exp_name=="Exp. 2"),REML = FALSE)
+bench2_null_exp2.res_rws=lmer(bench2_null_frmla,data=gz_by_distV_RWS_acc_df%>%filter(exp_name=="Exp. 2"),REML = FALSE)
+
+bench2_aov_exp2_res_rws<-anova(bench2_full_exp2.res_rws,bench2_null_exp2.res_rws)%>%tidy()%>%mutate(exp = "Exp. 2")%>%dplyr::filter(!is.na(df))
+
+knitr::kable(bind_rows(bench2_aov_exp1_res_rws,bench2_aov_exp2_res_rws), digits= 4, caption= "RWS lme results Benchmark 2")
+```
+
+```{r getting summary stats for visualization bin by v  and acc RWS}
+# summarizing across subjects
+gz_by_distV_acc_grp_rws<-gz_by_distV_RWS_acc_df%>%
+  dplyr::group_by(exp_name,sub_name,dist_v_rule_acc_bin,resp_rule_acc)%>%
+  dplyr::summarise(m_gz2pred=mean(m_pred_gz),count=n())%>%
+  dplyr::mutate(acc_type="rule")%>%
+  dplyr::rename(acc=resp_rule_acc)%>%
+  dplyr::filter(count>4)%>%
+  dplyr::group_by(exp_name,dist_v_rule_acc_bin,acc)%>%
+  dplyr::summarise(lo_ci=CI(m_gz2pred)[1],hi_ci=CI(m_gz2pred)[3],m_gz2pred=CI(m_gz2pred)[2],n_sub=n())
+
+```
+
+
+```{r visualize benchmark 2 for Acc as functioon of gaze confidence & v binn using v and acc RWS, fig.show="hold", out.width="50%" }
+#visualize rule acc
+(
+  plot_fig_3B_exp1<-
+    ggplot(data=gz_by_distV_acc_grp_rws%>%dplyr::filter(exp_name=="Exp. 1"),
+           aes(x=(dist_v_rule_acc_bin),y=m_gz2pred,color=as.factor(acc),fill=as.factor(acc), group=as.factor(acc)))+
+    geom_line(aes(color=as.factor(acc)),alpha=.4,linewidth=2)+
+    geom_pointrange(aes(ymin=lo_ci,ymax=hi_ci,group=as.factor(dist_v_rule_acc_bin)),position = position_dodge2(width=.1),linewidth=1.5)+
+    scale_x_continuous(name=" Expectation Strength")+
+    scale_y_continuous(name = "Gaze Prediction")+
+    scale_color_manual(name="ACC",values=color_vec_benchmark2_acc,labels=c("error","correct"))+
+    scale_fill_manual(name="ACC",values=color_vec_benchmark2_acc,labels=c("error","correct"))+
+    theme_classic()+
+    theme(plot.title = element_text(size = 20,face="bold",hjust = 0.5),
+          axis.title.x = element_text(size = 16,face="bold"),
+          axis.title.y = element_text(size = 16,face="bold"),
+          axis.text.x = element_text(size = 14,angle=0),
+          axis.text.y = element_text(size = 14,angle=0),
+          legend.position = "none"
+    )
+)
+
+## Exp. 2
+(
+  plot_fig_3B_exp2<-
+    ggplot(data=gz_by_distV_acc_grp_rws%>%dplyr::filter(exp_name=="Exp. 2"),
+           aes(x=(dist_v_rule_acc_bin),y=m_gz2pred,color=as.factor(acc),fill=as.factor(acc), group=as.factor(acc)))+
+    geom_line(aes(color=as.factor(acc)),alpha=.4,linewidth=2)+
+    # geom_point(aes(color=as.factor(acc)))+
+    # geom_ribbon(aes(ymin=lo_ci,ymax=hi_ci,fill=as.factor(acc),group=as.factor(acc)), alpha=.2,colour = NA)+
+    geom_pointrange(aes(ymin=lo_ci,ymax=hi_ci,group=as.factor(dist_v_rule_acc_bin)),position = position_dodge2(width=.1),linewidth=1.5)+
+    scale_x_continuous(name=" Expectation Strength")+
+    scale_y_continuous(name = "Gaze Prediction")+
+    scale_color_manual(name="ACC",values=color_vec_benchmark2_acc,labels=c("error","correct"))+
+    scale_fill_manual(name="ACC",values=color_vec_benchmark2_acc,labels=c("error","correct"))+
+    # ggtitle("Gaze2Pred diverges  by\n expectation strength & Acc")+
+    theme_classic()+
+    theme(plot.title = element_text(size = 20,face="bold",hjust = 0.5),
+          axis.title.x = element_text(size = 16,face="bold"),
+          axis.title.y = element_text(size = 16,face="bold"),
+          axis.text.x = element_text(size = 14,angle=0),
+          axis.text.y = element_text(size = 14,angle=0),
+          legend.position = "none"
+    )
+)
+
+
+# ggsave(filename=file.path(path_export_main_pics,"plot_fig_3B_exp1.pdf"),plot=plot_fig_3B_exp1,width=16,height=16,dpi=600, units="cm",device = "pdf")
+# ggsave(filename=file.path(path_export_main_pics,"plot_fig_3B_exp2.pdf"),plot=plot_fig_3B_exp2,width=16,height=16,dpi=600, units="cm",device = "pdf")
+
+```
+
+```{r get statistic tables of benchmark 2 pairwise comparisons RWS}
+#getting summary
+smry_vals_gz_by_distV_RWS_acc_pairwise<-gz_by_distV_RWS_acc_df%>%
+  dplyr::group_by(exp_name,sub_name,dist_v_rule_acc_bin,resp_rule_acc)%>%
+  dplyr::summarise(m_gz2pred=mean(m_pred_gz),count=n())%>%
+  dplyr::mutate(acc_type="rule")%>%
+  dplyr::rename(acc=resp_rule_acc)%>%
+  dplyr::filter(count>4)%>%
+  # dplyr::group_by(sub_name)%>%
+  # dplyr::filter(n()!=12)%>%
+  dplyr::group_by(exp_name,dist_v_rule_acc_bin,acc)%>%
+  dplyr::summarise(lo_ci=CI(m_gz2pred)[1],hi_ci=CI(m_gz2pred)[3],m_gz2pred=CI(m_gz2pred)[2])%>%
+  pivot_wider(names_from = acc, values_from = c(lo_ci,hi_ci,m_gz2pred))
+
+#get stats
+stats_gz_by_distV_RWS_acc_pairwise<-gz_by_distV_RWS_acc_df%>%
+  dplyr::group_by(exp_name,sub_name,dist_v_rule_acc_bin,resp_rule_acc)%>%
+  dplyr::summarise(m_gz2pred=mean(m_pred_gz),count=n())%>%
+  dplyr::mutate(acc_type="rule")%>%
+  dplyr::rename(acc=resp_rule_acc)%>%
+  dplyr::filter(count>4)%>%
+  dplyr::group_by(exp_name,sub_name,dist_v_rule_acc_bin)%>%
+  dplyr::filter(n()==2 )%>% #removing Ss with less than 5 items per bin
+  dplyr::group_by(exp_name,dist_v_rule_acc_bin)%>%
+  
+  dplyr::summarise(p_val=t.test(m_gz2pred~acc,paired = TRUE)$p.value,
+                   t=t.test(m_gz2pred~acc,paired = TRUE)$statistic,
+                   df=t.test(m_gz2pred~acc,paired = TRUE)$parameter)
+
+#joining
+smry_gz_by_distV_RWS_acc_pairwise<-full_join(smry_vals_gz_by_distV_RWS_acc_pairwise,
+                                             stats_gz_by_distV_RWS_acc_pairwise,
+                                             by=c("exp_name","dist_v_rule_acc_bin")
+                                             
+)
+
+knitr::kable(smry_gz_by_distV_RWS_acc_pairwise,digits=4,caption="SM table B2 pairise comparison of Benchmark 2 RWS")
+
+```
+
+```{r run pairwise comparison of Bench 2 RWS }
+sbs_bench2_RWS<-gz_by_distV_RWS_acc_df%>%
+  dplyr::filter(exp_name%in%c("Exp. 1","Exp. 2"))%>%
+  dplyr::group_by(exp_name,sub_name,dist_v_rule_acc_bin,resp_rule_acc)%>%
+  dplyr::summarise(m_gz2pred=mean(m_pred_gz),count=n())%>%
+  dplyr::mutate(acc_type="rule")%>%
+  dplyr::rename(acc=resp_rule_acc)%>%
+  # dplyr::filter(count>4)%>% # Currently not filtering out subjects except those without any values in bin
+  dplyr::group_by(sub_name)%>%
+  dplyr::filter(n()==12)
+
+pwc_bench_2_RWS <- sbs_bench2_RWS %>% 
+  ungroup()%>%
+  group_by(dist_v_rule_acc_bin) %>%
+  pairwise_t_test(
+    m_gz2pred ~ acc, paired = TRUE,
+    p.adjust.method = "bonferroni"
+    )%>%dplyr::select(dist_v_rule_acc_bin,statistic,df,p,p.adj)%>%
+  dplyr::mutate(model="sRW")
+
+
+```
+
+
+### Fig 3C: Benchmark 3 - steeper curve for high Gaze prediction trials
+#### RWS
+```{r benchmark 3: prep data to look at  of confidence using distV RWS as proxy of evidence}
+# binning prediction gz streng
+acc_by_gz_distV_RWS_sbs<-mean_gz_prereg_csv%>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  dplyr::mutate(dist_v_bin=ntile(expl.RWS.dist_v_5,6))%>% #binning  distance of V
+  dplyr::mutate(pred_gz_bin=ntile(m_pred_gz,2))%>% #binning high & low gaze2pred
+  dplyr::relocate(dist_v_bin,.after="expl.RWS.dist_v_5")%>%
+  dplyr::relocate(pred_gz_bin,.after="m_pred_gz")%>%
+  drop_na(dist_v_bin)%>%
+  dplyr::group_by(exp_name,sub_name,dist_v_bin,pred_gz_bin)%>%
+  dplyr::summarize(acc=mean(resp_rule_acc),count=n()) 
+
+# summarizing across subject
+acc_by_gz_distV_RWS_grp<-acc_by_gz_distV_RWS_sbs%>%
+  dplyr::group_by(exp_name,dist_v_bin,pred_gz_bin)%>%
+  dplyr::summarise(lo_ci=CI(acc)[1]*100,hi_ci=CI(acc)[3]*100,m_acc=CI(acc)[2]*100)
+
+
+
+```
+
+
+```{r visualize benchmark 3 for gaze as confidence using V RWS as proxy of evidence, fig.show="hold", out.width="50%" }
+
+#define colors for high/low gaze prediction
+cvec_pred_strength<-c("black","azure3")
+
+
+#Experiment 1
+( plot_fig_3C_exp1<-
+    ggplot(acc_by_gz_distV_RWS_grp%>%dplyr::filter(exp_name=="Exp. 1"),
+           aes(x=(dist_v_bin),y=m_acc,color=as.factor(pred_gz_bin),fill=as.factor(pred_gz_bin), group=(dist_v_bin)))+
+    geom_pointrange(aes(ymin=lo_ci,ymax=hi_ci,group=as.factor(dist_v_bin)),position = position_dodge2(width=.1),linewidth=1.5)+
+    geom_line(aes(color=as.factor(pred_gz_bin),group=as.factor(pred_gz_bin)),alpha=.8,linewidth=2)+
+    
+    scale_x_continuous(name="Expectation Strength")+
+    scale_y_continuous(name = "% Correct")+
+    scale_color_manual(name="Gaze Prediction", labels=c("low","high"), values=cvec_pred_strength)+
+    scale_fill_manual(name="Gaze Prediction", labels=c("low","high"), values=c("black","azure2"))+
+    theme_classic()+
+    theme(axis.title.x = element_text(size = 12,face="bold"),
+          axis.title.y = element_text(size = 12,face="bold"),
+          axis.text.x = element_text(size = 10,angle=0),
+          axis.text.y = element_text(size = 10,angle=0),
+          legend.position = "none"
+         )
+    )
+
+
+#Experiment 2
+(plot_fig_3C_exp2<-
+    ggplot(acc_by_gz_distV_RWS_grp%>%dplyr::filter(exp_name=="Exp. 2"),
+           aes(x=(dist_v_bin),y=m_acc,color=as.factor(pred_gz_bin),fill=as.factor(pred_gz_bin), group=(dist_v_bin)))+
+    geom_pointrange(aes(ymin=lo_ci,ymax=hi_ci,group=as.factor(dist_v_bin)),position = position_dodge2(width=.1),linewidth=1.5)+
+    geom_line(aes(color=as.factor(pred_gz_bin),group=as.factor(pred_gz_bin)),alpha=.8,linewidth=2)+
+    
+    scale_x_continuous(name="Expectation Strength")+
+    scale_y_continuous(name = "% Correct")+
+    scale_color_manual(name="Gaze Prediction", labels=c("low","high"), values=cvec_pred_strength)+
+    scale_fill_manual(name="Gaze Prediction", labels=c("low","high"), values=c("black","azure2"))+
+    theme_classic()+
+    theme(axis.title.x = element_text(size = 12,face="bold"),
+          axis.title.y = element_text(size = 12,face="bold"),
+          axis.text.x = element_text(size = 10,angle=0),
+          axis.text.y = element_text(size = 10,angle=0),
+          legend.position = c(.9,.2)
+         )
+)
+
+
+# ggsave(filename=file.path(path_export_main_pics,"plot_fig_3C_exp1.pdf"),plot=plot_fig_3C_exp1,width=16,height=16,dpi=600, units="cm",device = "pdf")
+# ggsave(filename=file.path(path_export_main_pics,"plot_fig_3C_exp2.pdf"),plot=plot_fig_3C_exp2,width=16,height=16,dpi=600, units="cm",device = "pdf")
+```
+
+```{r prep data to run prereg stats for Benchmark 3 using lme4  bin only by v5 RWS}
+acc_w_gz_distV_RWS_sbs_4stats<-mean_gz_prereg_csv%>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  dplyr::mutate(dist_v_bin=ntile(expl.RWS.dist_v_5,6))%>% #binning  distance of V
+  dplyr::mutate(pred_gz_bin=ntile(m_pred_gz,2))%>% #binning high & low gaze2pred
+  dplyr::relocate(dist_v_bin,.after="expl.RWS.dist_v_5")%>%
+  dplyr::relocate(pred_gz_bin,.after="m_pred_gz")%>%
+  dplyr::select("exp_name","sub_name","TrialNumber","resp_rule_acc", "pred_gz_bin","dist_v_bin")
+
+
+```
+
+```{r run prereg stats for Benchmark 3 using lme4  bin only by v5 RWS glmer}
+bench3_full_frmla<-resp_rule_acc~pred_gz_bin+dist_v_bin+pred_gz_bin:dist_v_bin+(1|sub_name)
+
+#Exp 1
+bench3_full_exp1.res_rws=glmer(bench3_full_frmla,                        
+                               data=acc_w_gz_distV_RWS_sbs_4stats%>%filter(exp_name=="Exp. 1")%>%ungroup(),
+                               family = binomial)%>%
+  broom.mixed::tidy()%>%
+  mutate(exp_name="Exp. 1")
+
+
+# Exp 2
+bench3_full_exp2.res_rws=glmer(bench3_full_frmla,                        
+                               data=acc_w_gz_distV_RWS_sbs_4stats%>%filter(exp_name=="Exp. 2")%>%ungroup(),
+                               family = binomial)%>%
+  broom.mixed::tidy()%>%
+  mutate(exp_name="Exp. 2")
+
+knitr::kable(bind_rows(bench3_full_exp1.res_rws,bench3_full_exp2.res_rws)%>%dplyr::filter(effect=="fixed"),caption = "Benchmark 3 RWS (glmer)")
+```
+
+```{r pairwise comparison of Bench 3 RWS}
+sbs_bench3_RWS<-acc_w_gz_distV_RWS_sbs_4stats%>%
+  dplyr::filter(exp_name%in%c("Exp. 1","Exp. 2"))%>%
+  dplyr::group_by(exp_name,sub_name,pred_gz_bin,dist_v_bin)%>%
+  dplyr::summarise(m_acc=mean(resp_rule_acc)*100,count=n())%>%
+  # dplyr::filter(count>4)%>% # Currently not filtering out subjects except those without any values in bin
+  dplyr::group_by(sub_name)%>%
+  dplyr::filter(n()==12)
+
+pwc_bench_3_RWS <- sbs_bench3_RWS %>% 
+  ungroup()%>%
+  group_by(dist_v_bin) %>%
+  pairwise_t_test(
+    m_acc ~ pred_gz_bin, paired = TRUE,
+    p.adjust.method = "bonferroni"
+    )%>%
+  dplyr::select(dist_v_bin,statistic,df,p,p.adj)%>%
+  dplyr::mutate(model="RWS")
+```
+
+## Fig S7
+### Exp 1 & 2 confidence benchmarks using pre-reg'ed RW
+```{r prep data to look at benchmark 2 of confidence using distV as proxy of evidence RW}
+n_ptiles_dist_v<-6
+
+gz_by_distV_RW_acc_df<-mean_gz_prereg_csv%>%
+  dplyr::group_by(exp_name,sub_name,resp_rule_acc)%>%
+  dplyr::mutate(dist_v_rule_acc_bin=ntile(expl.RW.dist_v_5,n_ptiles_dist_v))%>% 
+  dplyr::relocate(dist_v_rule_acc_bin,.after="expl.RW.dist_v_5") %>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  dplyr::mutate(dist_v_bin=ntile(expl.RW.dist_v_5,n_ptiles_dist_v))%>% #binning only according to V
+  dplyr::relocate(dist_v_bin,.after="dist_v_rule_acc_bin") 
+```
+
+
+```{r run prereg stats for Benchmark 2 using lme4 RW }
+#here 
+#Exp 1
+bench2_full_frmla<-m_pred_gz~resp_rule_acc+dist_v_rule_acc_bin+resp_rule_acc:dist_v_rule_acc_bin+(1|sub_name)
+# bench2_full_frmla<-m_pred_gz~resp_rule_acc+expl.dist_v_5+resp_rule_acc:expl.dist_v_5+(1|sub_name)
+
+bench2_full_exp1.res_rw=lmer(bench2_full_frmla,data=gz_by_distV_RW_acc_df%>%filter(exp_name=="Exp. 1"),REML = FALSE)
+
+
+
+# remove interaction term
+bench2_null_frmla<-m_pred_gz~resp_rule_acc+dist_v_rule_acc_bin+(1|sub_name)
+# bench2_null_frmla<-m_pred_gz~resp_rule_acc+expl.dist_v_5+(1|sub_name)
+
+bench2_null_exp1.res_rw=lmer(bench2_null_frmla,data=gz_by_distV_RW_acc_df%>%filter(exp_name=="Exp. 1"),REML = FALSE)
+
+
+#test with anova
+bench2_aov_exp1_res_rw<-anova(bench2_full_exp1.res_rw,bench2_null_exp1.res_rw)%>%tidy()%>%mutate(exp = "Exp. 1")%>%dplyr::filter(!is.na(df))
+
+# Exp 2. 
+bench2_full_exp2.res_rw=lmer(bench2_full_frmla,data=gz_by_distV_RW_acc_df%>%filter(exp_name=="Exp. 2"),REML = FALSE)
+bench2_null_exp2.res_rw=lmer(bench2_null_frmla,data=gz_by_distV_RW_acc_df%>%filter(exp_name=="Exp. 2"),REML = FALSE)
+
+bench2_aov_exp2_res_rw<-anova(bench2_full_exp2.res_rw,bench2_null_exp2.res_rw)%>%tidy()%>%mutate(exp = "Exp. 2")%>%dplyr::filter(!is.na(df))
+
+knitr::kable(bind_rows(bench2_aov_exp1_res_rw,bench2_aov_exp2_res_rw), digits= 4, caption= "RW lme results Benchmark 2")
+```
+
+
+```{r getting summary stats for visualization bin by v  and acc RW}
+# summarizing across subjects
+## option 2 binning by v & acc : dist_v_bin dist_v_rule_acc_bin
+gz_by_distV_acc_grp_rw<-gz_by_distV_RW_acc_df%>%
+  dplyr::group_by(exp_name,sub_name,dist_v_rule_acc_bin,resp_rule_acc)%>%
+  dplyr::summarise(m_gz2pred=mean(m_pred_gz),count=n())%>%
+  dplyr::mutate(acc_type="rule")%>%
+  dplyr::rename(acc=resp_rule_acc)%>%
+  dplyr::filter(count>4)%>%
+  dplyr::group_by(exp_name,dist_v_rule_acc_bin,acc)%>%
+  dplyr::summarise(lo_ci=CI(m_gz2pred)[1],hi_ci=CI(m_gz2pred)[3],m_gz2pred=CI(m_gz2pred)[2],n_sub=n())
+
+```
+
+Visualize Benchmark 2
+
+```{r visualize Fig S7 benchmark 2 for Acc as functioon of gaze confidence & v binn using v and acc RW, fig.show="hold", out.width="50%" }
+# Exp 1
+(
+  plot_SM_fig_S7_b_exp1<-
+    ggplot(data=gz_by_distV_acc_grp_rw%>%dplyr::filter(exp_name=="Exp. 1"),
+           aes(x=(dist_v_rule_acc_bin),y=m_gz2pred,color=as.factor(acc),fill=as.factor(acc), group=as.factor(acc)))+
+    geom_line(aes(color=as.factor(acc)),alpha=.4,linewidth=2)+
+    geom_pointrange(aes(ymin=lo_ci,ymax=hi_ci,group=as.factor(dist_v_rule_acc_bin)),position = position_dodge2(width=.1),linewidth=1.5)+
+    scale_x_continuous(name=" Expectation Strength")+
+    scale_y_continuous(name = "Gaze Prediction")+
+    scale_color_manual(name="ACC",values=color_vec_benchmark2_acc,labels=c("error","correct"))+
+    scale_fill_manual(name="ACC",values=color_vec_benchmark2_acc,labels=c("error","correct"))+
+    theme_classic()+
+    theme(plot.title = element_text(size = 20,face="bold",hjust = 0.5),
+          axis.title.x = element_text(size = 16,face="bold"),
+          axis.title.y = element_text(size = 16,face="bold"),
+          axis.text.x = element_text(size = 14,angle=0),
+          axis.text.y = element_text(size = 14,angle=0),
+          legend.position = "none"
+    )
+)
+
+## Exp. 2
+(
+  plot_SM_fig_S7_b_exp2<-
+    ggplot(data=gz_by_distV_acc_grp_rw%>%dplyr::filter(exp_name=="Exp. 2"),
+          aes(x=(dist_v_rule_acc_bin),y=m_gz2pred,color=as.factor(acc),fill=as.factor(acc), group=as.factor(acc)))+
+    geom_line(aes(color=as.factor(acc)),alpha=.4,linewidth=2)+
+    geom_pointrange(aes(ymin=lo_ci,ymax=hi_ci,group=as.factor(dist_v_rule_acc_bin)),position = position_dodge2(width=.1),linewidth=1.5)+
+    scale_x_continuous(name=" Expectation Strength")+
+    scale_y_continuous(name = "Gaze Prediction")+
+    scale_color_manual(name="ACC",values=color_vec_benchmark2_acc,labels=c("error","correct"))+
+    scale_fill_manual(name="ACC",values=color_vec_benchmark2_acc,labels=c("error","correct"))+
+    theme_classic()+
+    theme(plot.title = element_text(size = 20,face="bold",hjust = 0.5),
+          axis.title.x = element_text(size = 16,face="bold"),
+          axis.title.y = element_text(size = 16,face="bold"),
+          axis.text.x = element_text(size = 14,angle=0),
+          axis.text.y = element_text(size = 14,angle=0),
+          legend.position = c(.15, .15)
+    )
+)
+
+# ##saving
+# #exp1
+# ggsave(filename=file.path(path_export_sm_pics,"plot_SM_fig_S7_b_exp1.png"),plot=plot_SM_fig_S7_b_exp1,dpi=600, units="cm",device = "png")
+# # exp.2 
+# ggsave(filename=file.path(path_export_sm_pics,"plot_SM_fig_S7_b_exp2.png"),plot=plot_SM_fig_S7_b_exp2,dpi=600, units="cm",device = "png")
+```
+
+
+
+```{r get statistic tables of benchmark 2 pairwise comparisons RW}
+#getting summary
+smry_vals_gz_by_distV_RW_acc_pairwise<-gz_by_distV_RW_acc_df%>%
+  dplyr::group_by(exp_name,sub_name,dist_v_rule_acc_bin,resp_rule_acc)%>%
+  dplyr::summarise(m_gz2pred=mean(m_pred_gz),count=n())%>%
+  dplyr::mutate(acc_type="rule")%>%
+  dplyr::rename(acc=resp_rule_acc)%>%
+  dplyr::filter(count>4)%>%
+  # dplyr::group_by(sub_name)%>%
+  # dplyr::filter(n()!=12)%>%
+  dplyr::group_by(exp_name,dist_v_rule_acc_bin,acc)%>%
+  dplyr::summarise(lo_ci=CI(m_gz2pred)[1],hi_ci=CI(m_gz2pred)[3],m_gz2pred=CI(m_gz2pred)[2])%>%
+  pivot_wider(names_from = acc, values_from = c(lo_ci,hi_ci,m_gz2pred))
+
+#get stats
+stats_gz_by_distV_RW_acc_pairwise<-gz_by_distV_RW_acc_df%>%
+  dplyr::group_by(exp_name,sub_name,dist_v_rule_acc_bin,resp_rule_acc)%>%
+  dplyr::summarise(m_gz2pred=mean(m_pred_gz),count=n())%>%
+  dplyr::mutate(acc_type="rule")%>%
+  dplyr::rename(acc=resp_rule_acc)%>%
+  dplyr::filter(count>4)%>%
+  dplyr::group_by(exp_name,sub_name,dist_v_rule_acc_bin)%>%
+  dplyr::filter(n()==2 )%>% #removing Ss with less than 5 items per bin
+  dplyr::group_by(exp_name,dist_v_rule_acc_bin)%>%
+  
+  dplyr::summarise(p_val=t.test(m_gz2pred~acc,paired = TRUE)$p.value,
+                   t=t.test(m_gz2pred~acc,paired = TRUE)$statistic,
+                   df=t.test(m_gz2pred~acc,paired = TRUE)$parameter)
+
+#joining
+smry_gz_by_distV_RW_acc_pairwise<-full_join(smry_vals_gz_by_distV_RW_acc_pairwise,
+                                            stats_gz_by_distV_RW_acc_pairwise,
+                                            by=c("exp_name","dist_v_rule_acc_bin")
+                                            
+)
+
+knitr::kable(smry_gz_by_distV_RW_acc_pairwise,digits=4,caption="SM table B2 pairise comparison of Benchmark 2 RW")
+
+```
+
+
+```{r run pairwise comparison of Bench 2 RW }
+sbs_bench2_RW<-gz_by_distV_RW_acc_df%>%
+  dplyr::filter(exp_name%in%c("Exp. 1","Exp. 2"))%>%
+  dplyr::group_by(exp_name,sub_name,dist_v_rule_acc_bin,resp_rule_acc)%>%
+  dplyr::summarise(m_gz2pred=mean(m_pred_gz),count=n())%>%
+  dplyr::mutate(acc_type="rule")%>%
+  dplyr::rename(acc=resp_rule_acc)%>%
+  # dplyr::filter(count>4)%>% # Currently not filtering out subjects except those without any values in bin
+  dplyr::group_by(sub_name)%>%
+  dplyr::filter(n()==12)
+
+pwc_bench_2_RW <- sbs_bench2_RW %>% 
+  ungroup()%>%
+  group_by(dist_v_rule_acc_bin) %>%
+  pairwise_t_test(
+    m_gz2pred ~ acc, paired = TRUE,
+    p.adjust.method = "bonferroni"
+    )%>%dplyr::select(dist_v_rule_acc_bin,statistic,df,p,p.adj)%>%
+  dplyr::mutate(model="RW")
+
+
+```
+
+
+### Table S3 Benchmark 2 pairwise comparison
+
+```{r prep Table S3- Benchmark 2 pairwise comparison}
+table_S3_pwc_bench_2<-bind_rows(pwc_bench_2_RWS,pwc_bench_2_RW)%>%
+    dplyr::rename(expectation_bin=dist_v_rule_acc_bin)
+
+  
+
+knitr::kable(table_S3_pwc_bench_2,digits = 4,caption= "Table S3, Pairwise comparison Benchmark 2")
+```
+
+
+
+#### RW
+```{r benchmark 3: prep data to look at  of confidence using distV RW as proxy of evidence}
+
+
+# binning prediction gz streng
+acc_by_gz_distV_RW_sbs<-mean_gz_prereg_csv%>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  dplyr::mutate(dist_v_bin=ntile(expl.RW.dist_v_5,6))%>% #binning  distance of V
+  dplyr::filter(!is.na(dist_v_bin))%>%
+  dplyr::mutate(pred_gz_bin=ntile(m_pred_gz,2))%>% #binning high & low gaze2pred
+  dplyr::relocate(dist_v_bin,.after="expl.RW.dist_v_5")%>%
+  dplyr::relocate(pred_gz_bin,.after="m_pred_gz")%>%
+  dplyr::group_by(exp_name,sub_name,dist_v_bin,pred_gz_bin)%>%
+  dplyr::summarize(acc=mean(resp_rule_acc),count=n()) 
+
+
+
+
+# summarizing across subject
+acc_by_gz_distV_RW_grp<-acc_by_gz_distV_RW_sbs%>%
+  dplyr::group_by(exp_name,dist_v_bin,pred_gz_bin)%>%
+  dplyr::summarise(lo_ci=CI(acc)[1]*100,hi_ci=CI(acc)[3]*100,m_acc=CI(acc)[2]*100)
+
+
+
+```
+
+#### Fig S7 Right
+```{r visualize benchmark 3 for gaze as confidence using V RW as proxy of evidence, fig.show="hold", out.width="50%" }
+
+#define colors for high/low gaze prediction
+cvec_pred_strength<-c("black","azure3")
+
+
+#Experiment 1
+(plot_SM_fig_S5_c_exp1<-
+    ggplot(acc_by_gz_distV_RW_grp%>%dplyr::filter(exp_name=="Exp. 1"),
+           aes(x=(dist_v_bin),y=m_acc,color=as.factor(pred_gz_bin),fill=as.factor(pred_gz_bin), group=(dist_v_bin)))+
+    geom_pointrange(aes(ymin=lo_ci,ymax=hi_ci,group=as.factor(dist_v_bin)),position = position_dodge2(width=.1),linewidth=1.5)+
+    geom_line(aes(color=as.factor(pred_gz_bin),group=as.factor(pred_gz_bin)),alpha=.8,linewidth=2)+
+    
+    scale_x_continuous(name="Expectation Strength")+
+    scale_y_continuous(name = "% Correct")+
+    scale_color_manual(name="Gaze Prediction", labels=c("low","high"), values=cvec_pred_strength)+
+    scale_fill_manual(name="Gaze Prediction", labels=c("low","high"), values=c("black","azure2"))+
+    theme_classic()+
+    theme(axis.title.x = element_blank(),
+          axis.title.y = element_text(size = 12,face="bold"),
+          axis.text.x = element_text(size = 10,angle=0),
+          axis.text.y = element_text(size = 10,angle=0),
+          legend.position = "none"
+         )
+    )
+
+
+#Experiment 2
+(plot_SM_fig_S5_c_exp2<-
+    ggplot(acc_by_gz_distV_RW_grp%>%dplyr::filter(exp_name=="Exp. 2"),
+           aes(x=(dist_v_bin),y=m_acc,color=as.factor(pred_gz_bin),fill=as.factor(pred_gz_bin), group=(dist_v_bin)))+
+    geom_pointrange(aes(ymin=lo_ci,ymax=hi_ci,group=as.factor(dist_v_bin)),position = position_dodge2(width=.1),linewidth=1.5)+
+    geom_line(aes(color=as.factor(pred_gz_bin),group=as.factor(pred_gz_bin)),alpha=.8,linewidth=2)+
+    
+    scale_x_continuous(name="Expectation Strength")+
+    scale_y_continuous(name = "% Correct")+
+    scale_color_manual(name="Gaze Prediction", labels=c("low","high"), values=cvec_pred_strength)+
+    scale_fill_manual(name="Gaze Prediction", labels=c("low","high"), values=c("black","azure2"))+
+    theme_classic()+
+    theme(axis.title.x = element_text(size = 12,face="bold"),
+          axis.title.y = element_text(size = 12,face="bold"),
+          axis.text.x = element_text(size = 10,angle=0),
+          axis.text.y = element_text(size = 10,angle=0),
+          legend.position = c(.9,.2)
+         )
+)
+
+# ##saving
+# #exp1
+# ggsave(filename=file.path(path_export_sm_pics,"plot_SM_fig_S5_c_exp1.png"),plot=plot_SM_fig_S5_c_exp1,dpi=600, units="cm",device = "png")
+# # exp.2 
+# ggsave(filename=file.path(path_export_sm_pics,"plot_SM_fig_S5_c_exp2.png"),plot=plot_SM_fig_S5_c_exp2,dpi=600, units="cm",device = "png")
+```
+```{r prep data to run prereg stats for Benchmark 3 using lme4  bin only by v5 RW}
+acc_w_gz_distV_RW_sbs_4stats<-mean_gz_prereg_csv%>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  dplyr::mutate(dist_v_bin=ntile(expl.RW.dist_v_5,6))%>% #binning  distance of V
+  dplyr::mutate(pred_gz_bin=ntile(m_pred_gz,2))%>% #binning high & low gaze2pred
+  dplyr::relocate(dist_v_bin,.after="expl.RW.dist_v_5")%>%
+  dplyr::relocate(pred_gz_bin,.after="m_pred_gz")%>%
+  dplyr::select("exp_name","sub_name","TrialNumber","resp_rule_acc", "pred_gz_bin","dist_v_bin")
+
+
+```
+
+```{r run prereg stats for Benchmark 3 using lme4  bin only by v5 RW glmer}
+bench3_full_frmla<-resp_rule_acc~pred_gz_bin+dist_v_bin+pred_gz_bin:dist_v_bin+(1|sub_name)
+
+#Exp 1
+bench3_full_exp1.res=glmer(bench3_full_frmla,                        
+                           data=acc_w_gz_distV_RW_sbs_4stats%>%filter(exp_name=="Exp. 1")%>%ungroup(),
+                           family = binomial)%>%
+  broom.mixed::tidy()%>%
+  mutate(exp_name="Exp. 1")
+
+
+# Exp 2
+bench3_full_exp2.res=glmer(bench3_full_frmla,                        
+                           data=acc_w_gz_distV_RW_sbs_4stats%>%filter(exp_name=="Exp. 2")%>%ungroup(),
+                           family = binomial)%>%
+  broom.mixed::tidy()%>%
+  mutate(exp_name="Exp. 2")
+
+knitr::kable(bind_rows(bench3_full_exp1.res,bench3_full_exp2.res)%>%dplyr::filter(effect=="fixed"),caption = "Benchmark 3 (glmer)")
+```
+
+
+```{r pairwise comparison of Bench 3 RW}
+sbs_bench3_RW<-acc_w_gz_distV_RW_sbs_4stats%>%
+  dplyr::filter(exp_name%in%c("Exp. 1","Exp. 2"))%>%
+  dplyr::group_by(exp_name,sub_name,pred_gz_bin,dist_v_bin)%>%
+  dplyr::summarise(m_acc=mean(resp_rule_acc)*100,count=n())%>%
+  # dplyr::filter(count>4)%>% # Currently not filtering out subjects except those without any values in bin
+  dplyr::group_by(sub_name)%>%
+  dplyr::filter(n()==12)
+
+pwc_bench_3_RW <- sbs_bench3_RW %>% 
+  ungroup()%>%
+  group_by(dist_v_bin) %>%
+  pairwise_t_test(
+    m_acc ~ pred_gz_bin, paired = TRUE,
+    p.adjust.method = "bonferroni"
+    )%>%
+  dplyr::select(dist_v_bin,statistic,df,p,p.adj)%>%
+  dplyr::mutate(model="RW")
+```
+
+### Table S4 Benchmark 3 pairwise comparison
+
+```{r prep Table S4- Benchmark 3 pairwise comparison}
+table_S3_pwc_bench_3 <-bind_rows(pwc_bench_3_RWS,pwc_bench_3_RW)%>%
+    dplyr::rename(expectation_bin=dist_v_bin)
+
+  
+
+knitr::kable(table_S3_pwc_bench_3,digits = 3,caption= "Table S3, Pairwise comparison Benchmark 2")
+```
+
+
+## Fig 4
+
+First let's examine the relation between explicit cnfidence and P. Choice
+
+### Correlation of Confidence and RWS trial-by-trial trajectories
+
+```{r prep data to look at correltaion between RW traj & confidence ratings}
+
+corr_RWS_conf_ps<-mean_gz_prereg_exp3%>%
+  dplyr::group_by(sub_name)%>%
+  dplyr::summarize(r.conf_PC=rcorr(z_conf_rating,expl.RWS.p_choice)$r[2],pval.conf_PC=rcorr(z_conf_rating,expl.RWS.p_choice)$P[2],
+                   r.conf_prev_delta=rcorr(z_conf_rating,expl.RWS.prev_delta)$r[2],pval.conf_prev_delta=rcorr(z_conf_rating,expl.RWS.prev_delta)$P[2],
+                    r.conf_dist_v=rcorr(z_conf_rating,expl.RWS.dist_v_5)$r[2],pval.conf_dist_v=rcorr(z_conf_rating,expl.RWS.dist_v_5)$P[2]
+  )
+
+
+
+#doing for pval
+p_val_long<-corr_RWS_conf_ps%>%
+  select(c(sub_name,starts_with("pval")))%>%
+  pivot_longer(!sub_name,names_to = "vars_compared",names_prefix = "pval.",values_to="val")%>%
+  dplyr::mutate(value_type="p.val")%>%
+  dplyr::mutate(is_sig=if_else(val<.05,1,0))
+
+
+sum_p_val=p_val_long%>%
+  group_by(vars_compared)%>%
+  dplyr::summarise(n_sig=sum(is_sig),total_sub=n())
+
+
+# doing for corr
+corr_val_long<-corr_RWS_conf_ps%>%
+  select(c(sub_name,starts_with("r")))%>%
+  pivot_longer(!sub_name,names_to = "vars_compared",names_prefix = "r.",values_to="val")%>%
+  dplyr::mutate(value_type="corr")
+
+
+
+
+sum_corr_conf_rating_rw_traj<-corr_val_long%>%
+  group_by(vars_compared)%>%
+  dplyr::summarise(mean_corr=CI(val)[2],hi_CI=CI(val)[1],lo_CI=CI(val)[3],
+                   group_t_statistic=t.test(val)$statistic, group_pval=t.test(val)$p.value,
+                   ES=one_sample_ttest_cohen_d(val)
+                   )%>%
+  full_join(.,sum_p_val,by="vars_compared")
+
+knitr::kable(sum_corr_conf_rating_rw_traj%>% 
+               dplyr::filter(vars_compared!="conf_dist_v"),
+             digits = 3, caption = "correlation Confidence Ratings  and sRW trajectories")
+
+
+```
+
+So there is a super robust correlation between P. Choice and confidence ratings 30/32 Ss are significant!
+
+### Figure 4A
+
+Correlation of confidence & Gaze
+```{r prep data to lookk at relation of conf rating  and EM}
+
+# running the correlation analysis
+corr_gz_conf_ps<-mean_gz_prereg_exp3%>%
+  dplyr::group_by(sub_name)%>%
+  dplyr::summarize(r.conf_gz2pred=rcorr(z_conf_rating,m_pred_gz)$r[2],pval.conf_gz2pred=rcorr(z_conf_rating,m_pred_gz)$P[2]
+  )
+
+#doing for pval
+p_val_corr_gz_conf_ps_long<-corr_gz_conf_ps%>%
+  select(c(sub_name,starts_with("pval")))%>%
+  pivot_longer(!sub_name,names_to = "vars_compared",names_prefix = "pval.",values_to="val")%>%
+  dplyr::mutate(value_type="p.val")%>%
+  dplyr::mutate(is_sig=if_else(val<.05,1,0))
+
+
+# doing for corr
+corr_val_corr_gz_conf_ps_long<-corr_gz_conf_ps%>%
+  select(c(sub_name,starts_with("r")))%>%
+  pivot_longer(!sub_name,names_to = "vars_compared",names_prefix = "r.",values_to="val")%>%
+  dplyr::mutate(value_type="corr")
+
+
+##all subjects
+sum_p_val_corr_gz_conf_ps=p_val_corr_gz_conf_ps_long%>%
+  group_by(vars_compared)%>%
+  dplyr::summarise(n_sig=sum(is_sig),total_sub=n())
+
+
+sum_corr_gz_conf<-corr_val_corr_gz_conf_ps_long%>%
+  group_by(vars_compared)%>%
+  dplyr::summarise(mean_corr=CI(val)[2],lo_corr=CI(val)[3],hi_corr=CI(val)[1],
+                   group_t_statistic=t.test(val)$statistic, group_pval=t.test(val)$p.value,
+                   ES=one_sample_ttest_cohen_d(val))%>%
+  full_join(.,sum_p_val_corr_gz_conf_ps,by="vars_compared")
+
+knitr::kable(sum_corr_gz_conf,digits = 4, caption = "Experiment 3 correlation Confidence Ratings  and EM")
+
+
+```
+
+```{r viz correlation values of of conf rating  and EM}
+#all subjects
+corr_conf_gz2pred<-corr_val_corr_gz_conf_ps_long%>%
+  dplyr::filter(vars_compared=="conf_gz2pred")%>%
+  dplyr::filter(value_type=="corr")
+
+grp_corr_conf_gz2pred<-corr_conf_gz2pred%>%
+  dplyr::ungroup()%>%
+  dplyr::summarize(grp_mean=CI(val)[2],lo_ci=CI(val)[1],hi_ci=CI(val)[3])
+
+
+
+(
+  plot_fig_4A<-
+    ggplot(data=corr_conf_gz2pred,aes(y=val,x=1))+
+            xlim(c(.5,1.5))+
+    ylim(c(-.1,.3))+
+
+       geom_boxplot(outlier.shape = NA,linewidth=1,color="black",size=.5,width=.4)+ #,width=.02
+    # geom_pointrange (data=grp_corr_pc_gz2pred_rws%>%dplyr::filter(exp_name!="Exp. 3"), aes(y=grp_mean,ymin=lo_ci, ymax=hi_ci),size=3,fatten=1.5,width=.1, color="black")+
+    
+
+    geom_point(color="#707070",position = position_jitter(width=.1),size=3, alpha = .8)+
+    
+    # geom_hline(yintercept = 0, color="red",linetype="solid",size=1.5)+
+    geom_hline(yintercept = 0, color="brown1",linetype="dashed",linewidth=1.5)+
+ylab(expression(atop(rho, "\n Gaze & P. Choice")))+
+
+    theme_classic()+
+    # coord_fixed(ratio = 4,xlim = c(0.8, 1.2))+
+    theme(axis.title.x = element_blank(),
+          axis.title.y = element_text(size = 16,face="bold"),
+          axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          axis.text.y = element_text(size = 14,angle=0),
+          strip.text = element_text(size = 16,face="bold"),
+          strip.background = element_blank(),
+          legend.position = "none"
+    )
+)
+
+ 
+
+# ggsave(filename=file.path(path_export_main_pics,"plot_fig_4A_240624.pdf"),plot=plot_fig_4A,width=16,height=16,dpi=600, units="cm",device = "pdf")
+```
+
+
+#### Mixed model examining relation between Gaze, confidence & other factors
+
+So confidence & gaze are correlated but we also know that there are both correlated with a bunch of other factors (most notably P. Choice, accuracy). 
+So using mixed models lets try to tease apart these factors
+
+
+
+```{r Prep data for  mixed model analysis of gaze and confidence} 
+#Test with if Gaze pred
+##P.Choice
+
+
+#full model
+gz_dv_mdl2_full<-m_pred_gz~z_conf_rating+expl.RWS.p_choice+resp_rule_acc+expl.RWS.prev_delta+(1|sub_name)
+gz_conf_mdl2_full.res=lmer(gz_dv_mdl2_full,data=mean_gz_prereg_exp3,REML = FALSE)
+
+# remove Confidence
+gz_dv_mdl2_no_conf<-m_pred_gz~expl.RWS.p_choice+resp_rule_acc+expl.RWS.prev_delta+(1|sub_name)
+gz_dv_mdl2_no_conf.res=lmer(gz_dv_mdl2_no_conf,data=mean_gz_prereg_exp3,REML = FALSE)
+
+#test with anova
+
+gz_by_conf_PC_aov_res<-anova(gz_conf_mdl2_full.res,gz_dv_mdl2_no_conf.res)%>%
+  tidy()%>%
+  dplyr::filter(!is.na(df))
+
+knitr::kable(gz_by_conf_PC_aov_res,digits=4, caption="MM results of gaze by confidence & other variables")
+```
+
+This is the formula used: `r deparse1(gz_dv_mdl2_full)`
+
+### Fig 4 B
+
+Comparing metacognition of eye vs. explicit ratings confidence.
+
+From the OSF (Pre-reg Hypothesis 2): "We will compare the metacognitive sensitivity of explicit confidence ratings and Gaze2Prediction. It should be noted that in this experimental paradigm both measures are obtained for each trial, ensuring that first-order performance is identical and controlled for. Accordingly, we use delta confidence, the difference of the mean confidence rating for correct vs. incorrect trials (accuracy defined as rule accuracy)  as a straight-forward index of metacognition well suited to deal with continuous confidence ratings (Rahnev, D., 2023).  To ensure that differences between the measures does not arise from differences in the measurement scale we will use a transformation of Gaze2Prediction into eye “confidence rating” (see “Indices”). To compare the two measures we will perform a paired t-test on the delta confidence for the two measures. Bayesian analyses will be used to examine a potential null finding regarding the difference between the measures with a Bayes Factor <.33 considered as moderate evidence (Wagenmakers et al., 2018)."
+
+```{r prep data to compare metacognition eye vs rating}
+rating_eye_delta_conf<-mean_gz_prereg_exp3%>%
+  group_by(sub_name,resp_rule_acc)%>%
+  dplyr::summarize(m_conf_rating=mean(conf_rating),m_eye_rating=mean(gz_conf))%>%
+  dplyr::group_by(sub_name)%>%
+  dplyr::mutate(diff_rating_expl=m_conf_rating-first(m_conf_rating),
+                diff_rating_eye=m_eye_rating-first(m_eye_rating))%>%
+  dplyr::filter(diff_rating_expl!=0)
+
+rating_eye_delta_conf_long<-rating_eye_delta_conf%>%
+  dplyr::select(sub_name,diff_rating_expl,diff_rating_eye)%>%
+  pivot_longer(cols = starts_with("diff"),names_prefix = "diff_rating_", names_to = "source",values_to = "diff_value")
+
+```
+
+
+```{r visualize Fig 4B metacognition of eye vs explicit rating}
+
+(plot_fig_4B<-
+    ggpaired(data=rating_eye_delta_conf_long,
+             x="source",y="diff_value",id="sub_name",fill="source",line.color = "lightgrey",alpha=.1,line.size = .2)+
+    # scale_y_continuous(name="Delta confidence")+
+    scale_y_continuous(expression(Delta ~ "Confidence"))+
+    scale_x_discrete(name="Confidence Source",labels=c("Explicit","Gaze"))+
+    scale_fill_manual(values = color_vec_eye_expl_source)+
+    geom_hline(yintercept = 0, color="brown1",linetype="dashed",linewidth=1.5)+
+    theme_classic()+
+    theme(axis.title.x = element_text(size = 16,face="bold"),
+          axis.title.y = element_text(size = 16,face="bold"),
+          axis.text.x = element_text(size = 14,angle=0),
+          axis.text.y = element_text(size = 14,angle=0),
+          legend.position = "none"
+    )
+)
+
+# ggsave(filename=file.path(path_export_main_pics,"plot_fig_4B.pdf"),plot=plot_fig_4B,width=16,height=16,dpi=600, units="cm",device = "pdf")
+
+```
+
+So we see a big win for Explicit Rating! They have much higher metacognition
+
+
+```{r stats for comparison of explicit and eye delat confidence}
+
+stats_expl_eye_delta_conf<-bind_cols(
+  t.test(data=rating_eye_delta_conf_long, diff_value~source, paired=TRUE)%>%
+    tidy()%>%
+    dplyr::select(estimate, conf.low,conf.high,statistic,p.value,parameter),
+  
+  cohens_d(data=rating_eye_delta_conf_long%>%ungroup(), diff_value~source, paired=TRUE)%>%select(effsize)
+)
+
+knitr::kable(stats_expl_eye_delta_conf,digits=3,caption= "ttest results of delta confidence expl vs. eye")
+
+```
+
+#### stats of each measures metacognitive sensitivity 
+i.e. delta confidence >0
+
+```{r run stats to see if eye_expl have delta confidence greater than zero}
+grp_delta_conf_by_source<-rating_eye_delta_conf_long%>%
+  dplyr::group_by(source)%>%
+  dplyr::summarise(mean=CI(diff_value)[2],lo_ci=CI(diff_value)[3],hi_ci=CI(diff_value)[1],
+                   statistic=t.test(diff_value)$statistic,
+                   p_val=t.test(diff_value)$p.value,
+                   ES=one_sample_ttest_cohen_d(diff_value))
+
+knitr::kable(grp_delta_conf_by_source,digits =3, caption = "explicit/eye confidence one sample ttest")
+
+
+```
+
+### Fig 4C: Compare Acc by source
+Now we can look at how accurate each source is
+
+#### Look at overall acc by source
+```{r prep data to look at overall acc by source}
+acc_by_source_sbs<-mean_gz_prereg_csv%>%
+  dplyr::filter(exp_name%in%c("Exp. 1", "Exp. 2"))%>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  dplyr::summarise(rule_acc_resp=mean(resp_rule_acc),
+                   rule_acc_eye=mean(eye_rule_acc))%>%
+  pivot_longer(cols = c(rule_acc_resp,rule_acc_eye),names_to = "source",values_to = "acc",names_prefix = "rule_acc_")%>%
+  dplyr::mutate(acc=acc*100)%>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  
+  dplyr::mutate(diff_acc=acc-last(acc))
+
+
+#getting summary stats
+acc_by_source_by_exp<-acc_by_source_sbs%>%
+  dplyr::group_by(exp_name,source)%>%
+  dplyr::summarize(mean_acc=CI(acc)[2],acc_lo_ci=CI(acc)[3],acc_hi_ci=CI(acc)[1])
+
+
+acc_by_source_comb_exp<-acc_by_source_sbs%>%
+  dplyr::group_by(source)%>%
+  dplyr::summarize(mean_acc=CI(acc)[2],acc_lo_ci=CI(acc)[3],acc_hi_ci=CI(acc)[1])%>%
+  dplyr::mutate(exp_name="Exp 1& 2")
+
+
+acc_by_source_by_exp<-bind_rows(acc_by_source_by_exp,acc_by_source_comb_exp)
+
+#get paired t-test of acc~source
+ttest_acc_by_source<-acc_by_source_sbs%>%
+  dplyr::ungroup()%>%
+  dplyr::summarize(p.val=t.test(acc~source,paired=TRUE)$p.val,
+                   t=t.test(acc~source,paired=TRUE)$statistic,
+                   df=t.test(acc~source,paired=TRUE)$parameter,
+                   ES=cohens_d(.,formula=acc~source,paired=TRUE)$effsize)
+
+
+# get one sample ttest
+one_sample_ttest_acc_source<-acc_by_source_sbs%>%
+  dplyr::group_by(source)%>%
+  dplyr::summarise(p.val=t.test(acc~1,mu=50)$p.val,
+                   t=t.test(acc~1,mu=50)$statistic,
+                   df=t.test(acc~1,mu=50)$parameter,
+                   ES=cohens_d(.,formula=acc~1,mu=50)$effsize)
+
+#get difference in accuracy
+acc_diff_by_source_comb_exp<-acc_by_source_sbs%>%
+  dplyr::filter(diff_acc!=0)%>%
+  dplyr::ungroup()%>%
+  dplyr::summarize(mean_diff=CI(diff_acc)[2],diff_lo_ci=CI(diff_acc)[3],diff_acc_hi_ci=CI(diff_acc)[1])
+
+
+###printing tables
+knitr::kable(acc_by_source_by_exp,digits=3,caption = "overall acc by source per exp")
+
+knitr::kable(ttest_acc_by_source,digits=3,caption = "stats of acc by source (exp 1& 2 comb)")
+
+knitr::kable(acc_diff_by_source_comb_exp,digits=3,caption = "diff acc by source (exp 1&2)")
+
+knitr::kable(one_sample_ttest_acc_source,caption="one sample ttest vs. chance by source",digits=3)
+```
+
+
+```{r viz Fig 4C acc by same_diff eye_resp}
+( plot_fig_4C<-
+    ggpaired(data =acc_by_source_sbs,
+             x="source", y="acc", id="sub_name", fill="source",line.color = "lightgrey",alpha=.1,line.size = .2 )+
+    scale_x_discrete(name= "Source",labels=c("Explicit","Gaze"))+
+    ylab("% Correct")+
+    # xlab("Eye-Resp Match")+
+    geom_hline(yintercept = 50, color="brown1",linetype="dashed",linewidth=1.5)+
+    scale_fill_manual(values = color_vec_eye_expl_source,name= "Source",labels=c("Explicit","Gaze"))+
+    theme_classic()+
+    theme(axis.title.x = element_text(size = 16,face="bold"),
+          axis.title.y = element_text(size = 16,face="bold"),
+          axis.text.x = element_text(size = 14,angle=0),
+          axis.text.y = element_text(size = 10,angle=0),
+          legend.position = "none",
+    )
+)
+
+# ggsave(filename=file.path(path_export_main_pics,"plot_fig_4C.pdf"),plot=plot_fig_4C,width=16,height=16,dpi=600, units="cm",device = "pdf")
+```
+
+
+So Eye accuracy is quite good ~60%!!
+
+### Figure 4D: Learning curve by source 
+```{r prep data for learning curve by source}
+
+#subject by subject relative accuracy-per relative trial number
+learning_curve_acc_by_source_sbs<-mean_gz_all_sub_csv%>%
+  dplyr::filter(exp_name%in%c("Exp. 1", "Exp. 2"))%>%
+  dplyr::group_by(sub_name,rel_trial_number)%>%
+  dplyr::mutate(bin_ind=findInterval(rel_trial_number,seq(1,36,by=4)))%>%
+  dplyr::group_by(sub_name,bin_ind)%>%
+  dplyr::summarize(acc_response=mean(resp_rule_acc,na.rm=TRUE)*100,
+                   acc_eye=mean(eye_rule_acc,na.rm=TRUE)*100)
+
+#all subjects
+#pivoting to long and adding a column of source
+learning_curve_acc_by_source_sbs<-learning_curve_acc_by_source_sbs%>%
+  pivot_longer(cols=c(acc_response,acc_eye), names_prefix = "acc_",names_to="source", values_to = "acc")
+
+
+#group statistic-per relative trial number
+learning_curve_acc_by_source_grp<-learning_curve_acc_by_source_sbs%>%
+  dplyr::group_by(bin_ind,source)%>%
+  dplyr::summarize(lo_ci=CI(acc)[3],hi_ci=CI(acc)[1],mean_acc=CI(acc)[2])
+
+
+```
+
+```{r viz Fig 4D learning curve by source}
+
+#Plot All subjects
+#plot learning within block binned by 4 trial 
+( plot_fig_4D<-
+    ggplot(data=learning_curve_acc_by_source_grp%>%dplyr::filter(bin_ind<9),aes(x=bin_ind,y=mean_acc, group=source,color=source, fill=source))+
+    geom_line()+
+    geom_point()+
+    geom_ribbon(aes(ymin=lo_ci ,ymax=hi_ci),alpha=.3, color=NA)+
+    # geom_line(data=sbs_rel_trial_acc_bin,aes(x=bin_ind,y=rel_actual_acc,group=sub_name),alpha=.2)+
+    scale_x_continuous(name=" Trial # (within block)", labels = c("1-4","5-8","9-12","13-16","17-20","21-24","25-28","29-32"),breaks = c(1:8),limit=c(1,8))+
+    scale_y_continuous(name = "% Correct")+
+    geom_hline(yintercept = 50, color="brown1",linetype="dashed",linewidth=1.5)+
+    scale_color_manual(values=color_vec_eye_expl_source, name= "Source",limits=c("response","eye"),labels=c("Explicit","Gaze") )+
+    scale_fill_manual(values=color_vec_eye_expl_source, name= "Source",limits=c("response","eye"),labels=c("Explicit","Gaze") )+
+    
+    theme_classic()+
+    theme(axis.title.x = element_text(size = 16,face="bold"),
+          axis.title.y = element_text(size = 16,face="bold"),
+          axis.text.x = element_text(size = 14,angle=15),
+          axis.text.y = element_text(size = 14,angle=0)
+    )
+  
+)
+
+# ggsave(filename=file.path(path_export_main_pics,"plot_fig_4D.pdf"),plot=plot_fig_4D,width=16,height=16,dpi=600, units="cm",device = "pdf")
+```
+
+
+## Fig S8
+Examine the correlation between Explicit and Ocular metacognitionacross SS
+
+```{r get stats for corr of eye & explicit rating delta confidence }
+
+#get Bayes Factor (BF) for correlation of delta confidence of eyes & ratings
+BF_corr_rating_eye_delta_conf<-correlationBF(rating_eye_delta_conf$diff_rating_expl,rating_eye_delta_conf$diff_rating_eye)%>%
+  bayesfactor_models()
+
+#transforming from log 
+BF_corr_rating_eye_delta_conf<-exp(1)^BF_corr_rating_eye_delta_conf$log_BF[2]
+#push into df
+expl_eye_metacog_exp3_corr_stats<-tibble(
+  r=rcorr(rating_eye_delta_conf$diff_rating_expl,rating_eye_delta_conf$diff_rating_eye)$r[2],
+  pval =rcorr(rating_eye_delta_conf$diff_rating_expl,rating_eye_delta_conf$diff_rating_eye)$P[2],
+  df=nrow(rating_eye_delta_conf)-1,
+  BF=BF_corr_rating_eye_delta_conf)
+
+knitr::kable(expl_eye_metacog_exp3_corr_stats, digits=2,caption = "stats of correlation between explicit and ocular metacognition")
+
+```
+
+
+```{r viz Fig S8 correlate eye & explicit rating difference}
+
+
+(plot_SM_fig_S8<-
+  ggplot(data=rating_eye_delta_conf,aes(x=diff_rating_expl,y=diff_rating_eye))+
+    geom_point()+
+    geom_smooth(method=lm)+
+
+    xlab(" Explicit \u0394 confidence")+
+    ylab("Ocular \u0394 confidence")+
+    theme_bw()+
+    theme(title = element_text(size = 16,face="bold"),
+          plot.subtitle=  element_text(size = 14,angle=0),
+          
+          axis.title.x = element_text(size = 16,face="bold"),
+          axis.text.x = element_text(size = 14,angle=0),
+          axis.title.y = element_text(size = 16,face="bold"),
+          axis.text.y = element_text(size = 14,angle=0),
+          legend.position = "none") 
+)
+
+# ggsave(plot = plot_SM_fig_S8,filename = file.path(path_export_sm_pics,"SM_fig_S8_corr_ocular_explicit_metacog.jpg"), units = "cm")
+
+```
+
+This is interesting! Eye metacognition & Explict Metacognition seem to be somewhat unrelated abilities.
+
+BF is inconclusive
+
+Need to check this with Bayesian null analysis and sample size is still small so prbly think of a way to show at a trial level that the two diverge
+
+##### further test for correlation between metacognition across SS
+So let's try also controling for each Ss's rule acc
+```{r test corr between Ss metacognition and rule acc}
+
+rating_eye_delta_conf_w_acc<-full_join(rating_eye_delta_conf,
+                                       mean_gz_prereg_exp3%>%
+                                         dplyr::group_by(sub_name)%>%
+                                         dplyr::summarise(m_acc=mean(resp_rule_acc)),
+                                       by="sub_name")
+
+f<-lm(diff_rating_expl~diff_rating_eye*m_acc,data = rating_eye_delta_conf_w_acc)
+
+knitr::kable(summary(f)%>%tidy(), digits=3, caption="expl. meta by eye meta: rule acc")
+```
+
+## Fig 5
+
+### Fig 5A: First we get overall rate of switching
+
+```{r prp data for effect of rule switch on eye_expl resp match}
+#get overall rule switching
+eye_expl_overall_rule_switch_sbs<-mean_gz_prereg_csv%>%
+  drop_na(is_rule_switch,eye_rule_switch)%>%
+  dplyr::select(exp_name,sub_name,is_rule_switch,eye_rule_switch)%>%
+  dplyr::rename(rule_switch_eye=eye_rule_switch,rule_switch_response=is_rule_switch)%>%
+  pivot_longer(cols=c(rule_switch_eye,rule_switch_response),names_to = "source",values_to = "rule_switch",names_prefix = "rule_switch_")%>%
+  dplyr::group_by(exp_name,sub_name,source,rule_switch)%>%
+  dplyr::summarise(count=n())%>%
+  dplyr::group_by(exp_name,sub_name,source)%>%
+  dplyr::mutate(porp=count/(sum(count))*100)
+
+eye_expl_overall_rule_switch_by_exp<-eye_expl_overall_rule_switch_sbs%>%
+  dplyr::filter(rule_switch==1)%>%
+  dplyr::group_by(exp_name,source)%>%
+  dplyr::summarise(mean_porp=CI(porp)[2],lo_ci=CI(porp)[3],hi_ci=CI(porp)[1])
+
+
+eye_expl_overall_rule_switch_acrss_exp<-eye_expl_overall_rule_switch_sbs%>%
+  dplyr::filter(rule_switch==1)%>%
+  dplyr::filter(exp_name%in%c("Exp. 1", "Exp. 2"))%>%
+  dplyr::group_by(source)%>%
+  dplyr::summarise(mean_porp=CI(porp)[2],lo_ci=CI(porp)[3],hi_ci=CI(porp)[1])%>%
+  dplyr::mutate(exp_name="Exp.1 &2")
+
+eye_expl_overall_rule_switch_grp<-bind_rows(eye_expl_overall_rule_switch_by_exp,eye_expl_overall_rule_switch_acrss_exp)
+
+
+
+knitr::kable(eye_expl_overall_rule_switch_grp,digits=2,caption="Overall Rule switching by source")
+
+## Do stats of rule switching
+
+#get stat test of source acc
+ttest_rule_switch_by_source<-eye_expl_overall_rule_switch_sbs%>%
+  dplyr::filter(rule_switch==1)%>%
+  dplyr::filter(exp_name%in%c("Exp. 1", "Exp. 2"))%>%
+  dplyr::ungroup()%>%
+  dplyr::summarize(p.val=t.test(porp~source,paired=TRUE)$p.val,
+                   t=t.test(porp~source,paired=TRUE)$statistic,
+                   df=t.test(porp~source,paired=TRUE)$parameter,
+                   ES=cohens_d(.,formula=porp~source,paired=TRUE)$effsize)
+
+knitr::kable(ttest_rule_switch_by_source,digits=3,caption="Stats of Overall Rule switching by source")
+
+
+```
+
+```{r visualize overall rule switching by source}
+(plot_fig_5A<-
+   ggpaired(data=eye_expl_overall_rule_switch_sbs%>%
+              dplyr::filter(rule_switch==1)%>%
+              dplyr::filter(exp_name%in%c("Exp. 1", "Exp. 2")),
+            x="source", y="porp", id="sub_name", fill="source",line.color = "lightgrey",alpha=.1,line.size = .2  )+
+   scale_x_discrete(name= "Response Source",limits=c("response","eye"),labels=c("Explicit","Gaze"))+
+   ylab("% Rule Switching")+
+   # xlab("Response Source")+
+   scale_fill_manual(values = color_vec_eye_expl_source,name= "Source",limits=c("response","eye"),labels=c("Explicit","Gaze"))+
+   theme_classic()+
+   theme(title = element_text(size = 18,face="bold"),
+         axis.title.x = element_text(size = 16,face="bold"),
+         axis.title.y = element_text(size = 16,face="bold"),
+         axis.text.x = element_text(size = 14,angle=0),
+         axis.text.y = element_text(size = 14,angle=0),
+         legend.position = "none",
+   )
+)
+
+# ggsave(filename=file.path(path_export_main_pics,"plot_fig_5A.pdf"),plot=plot_fig_5A,width=14,height=16,dpi=600, units="cm",device = "pdf")
+
+```
+
+
+**So eyes are signfiacntly more Switch-y!!**
+
+
+### Figure 5b - Winning model  for Eye vs. Response
+```{r prep data for  distribution of winning model by source}
+
+win_model_by_source<-mean_gz_prereg_csv%>%
+  dplyr::select(exp_name,sub_name,expl.Win_model,eye.Win_model)%>%
+  dplyr::filter(exp_name%in%c("Exp. 1","Exp. 2"))%>%
+  dplyr::group_by(sub_name)%>%  
+  dplyr::filter(row_number()==1)%>%
+  dplyr::ungroup()%>%
+  pivot_longer(cols=c(expl.Win_model,eye.Win_model),names_pattern = "(.*)\\.(.*)",
+               names_to = c("source","m"),
+               values_to = "win_model")%>%
+  dplyr::select(-m)%>%
+  # dplyr::mutate(win_model=case_when(
+  #   win_model=="RWS"~"sRW",
+  #   .default = as.character(win_model))
+    
+    dplyr::mutate(win_model=case_when(
+    win_model=="RWS"~"sticky Rescorla Wagner",
+    win_model=="RW"~ "Rescorla Wagner",
+    win_model=="WSLS"~ "Win-Stay \n Lose-Switch",
+    .default = as.character(win_model))
+    )%>%
+  dplyr::mutate(source=case_match(source,
+                                  "eye"~"Gaze",
+                                  "expl"~"Explicit"))
+  
+```
+
+```{r viz Fig 5B distribution of winning model by source}
+
+win_model_by_source$win_model<-factor(win_model_by_source$win_model,levels = c("sticky Rescorla Wagner","Rescorla Wagner","Win-Stay \n Lose-Switch"))
+
+# win_model_by_source$win_model<-factor(win_model_by_source$win_model,levels = c("WSLS","RW","sRW"))
+
+(plot_fig_5B<-
+    ggplot(data=win_model_by_source,
+           aes(x=win_model,fill=source))+
+    geom_bar(position = position_dodge(.9),width = .8)+
+    # facet_grid(~source)+
+    scale_fill_manual(values=color_vec_eye_expl_source)+
+    ylab("# Participants")+
+    xlab("Model")+
+    theme_classic()+
+    theme(axis.title.x = element_text(size = 16,face="bold"),
+          axis.title.y = element_text(size = 16,face="bold"),
+          axis.text.x = element_text(size = 14,angle=0),
+          axis.text.y = element_text(size = 14,angle=0))
+  
+)
+
+# ggsave(filename=file.path(path_export_main_pics,"plot_fig_5B.pdf"),plot=plot_fig_5B,width=26,height=16,dpi=600, units="cm",device = "pdf")
+```
+
+
+```{r run stats of winning model}
+BIC_model<-mean_gz_prereg_csv%>%
+  dplyr::select(exp_name,sub_name,expl.WSLS_BIC,expl.RW_BIC,expl.RWS_BIC,
+                eye.WSLS_BIC,eye.RW_BIC,eye.RWS_BIC)%>%
+  dplyr::filter(exp_name%in%c("Exp. 1","Exp. 2"))%>%
+  dplyr::group_by(sub_name)%>%  
+  dplyr::filter(row_number()==1)%>%
+  dplyr::ungroup()%>%
+  pivot_longer(cols=expl.WSLS_BIC:eye.RWS_BIC,names_pattern = "(.*)\\.(.*)_(.*)",
+               names_to = c("source","model","B"),
+               values_to = "BIC")%>%
+  dplyr::select(-B)
+
+## Run stats Explicit
+res.aov_win_model_expl <- rstatix::anova_test(
+  data = BIC_model%>%
+    dplyr::filter(source=="expl")%>%
+    ungroup(),
+  dv=BIC,wid = sub_name,within=c(model),
+  
+  effect.size="pes")%>%
+  get_anova_table()%>%
+  as_tibble()%>%
+  dplyr::mutate(source="expl")
+
+## run stats Eye
+res.aov_win_model_eye <- rstatix::anova_test(
+  data = BIC_model%>%
+    dplyr::filter(source=="eye")%>%
+    ungroup(),
+  dv=BIC,wid = sub_name,within=c(model),
+  effect.size="pes"
+)%>%get_anova_table() %>%
+  as_tibble()%>%
+  dplyr::mutate(source="Eye")
+
+res.aov_win_model<-bind_rows(res.aov_win_model_expl,res.aov_win_model_eye)
+
+knitr::kable(res.aov_win_model,digits = 4,caption="rmANOV results of BIC model per source")
+
+## run pairwise comparison
+
+win_model_pwc <-BIC_model%>%
+  group_by(source) %>%
+  pairwise_t_test(
+    BIC ~ model, paired = TRUE,
+    p.adjust.method = "bonferroni"
+  )%>%
+  as_tibble()
+
+knitr::kable(win_model_pwc,digits = 4,caption="pairwise comparison of model's BIC per source")
+
+##summary stats
+summary_stats_BIC<-BIC_model%>%
+  group_by(source,model)%>%
+  rstatix::get_summary_stats(BIC,show = c("mean","ci"))
+
+knitr::kable(summary_stats_BIC,digits = 4,caption="summary stats of BIc per model's & source")
+```
+
+small detour to viz model comparison metrics
+
+#### SM fig S5- barplot with dots of values- faceted
+```{r pre data for fig S5 marplot of BIC}
+#preping data
+#removing a random value (100)
+scale_val=100
+
+summary_stats_BIC_orig<-summary_stats_BIC
+summary_stats_BIC<-summary_stats_BIC%>%
+  dplyr::mutate(mean=mean-scale_val)
+
+summary_stats_BIC$source<-dplyr::recode(summary_stats_BIC$source,"expl"="Explicit","eye"="Gaze")
+
+BIC_model_orig<-BIC_model
+BIC_model<-BIC_model%>%
+  dplyr::mutate(BIC=BIC-scale_val)
+
+BIC_model$source<-dplyr::recode(BIC_model$source,"expl"="Explicit","eye"="Gaze")
+
+
+(
+  plot_SM_fig_S5<-ggplot(summary_stats_BIC, aes(x=model, y=mean, fill = source)) + 
+    geom_bar(stat="identity",  position=position_dodge(width = .9),width=.8, color="black",alpha=0.9) + 
+    
+    # adding error bar-how to assign the right data for each model?
+    geom_errorbar(data=summary_stats_BIC,aes(x=model,ymin=mean-ci,ymax=mean+ci), position=position_dodge(width = .9),width=.4)+
+    # adding individual subject points-  how to assign the right data for each model?
+    geom_jitter(data=BIC_model,aes(y=BIC,x=model),position=position_jitterdodge(jitter.width=0.1, dodge.width = .9), size = 1.2)+ 
+    #change y label and limits
+    scale_y_continuous(name="BIC", limits = c(0,125),breaks=c(0,40,80,120),labels = c(100,140,180,220))+
+    scale_x_discrete(name="Model")+
+    #change legend labels
+    scale_fill_manual(values = color_vec_eye_expl_source, name = "Source", labels = c("Explicit", "Gaze"))+
+    facet_wrap(~source)+
+    theme_classic()+
+    theme(axis.text.y =element_text(size=14),
+          axis.title.y=element_text(size=16,face="bold"),
+          axis.text.x =element_text(size=14), 
+          axis.title.x=element_text(size=16,face="bold"),
+          strip.text = element_text(size = 16,face="bold"),
+          strip.background = element_blank()
+
+
+    )
+)
+
+# ggsave(plot = plot_SM_fig_S5,filename = file.path(path_export_sm_pics,"SM_fig_S5_mdl_compr_by_source.jpg"))
+```
+
+### Figure 5c- Comparison of sRW model parameters by source
+```{r prep data to look at model parameters}
+model_param_long_all<-mean_gz_prereg_csv%>%
+  dplyr::select(exp_name,sub_name,
+                expl.RW_alpha,expl.RW_beta,
+                expl.WSLS_eps,
+                expl.RWS_alpha:expl.RWS_rho,
+                eye.RW_alpha,eye.RW_beta,
+                eye.WSLS_eps,
+                eye.RWS_alpha:eye.RWS_rho)%>%
+  dplyr::group_by(sub_name)%>%  
+  dplyr::filter(row_number()==1)%>%
+  dplyr::ungroup()%>%
+  pivot_longer(cols=expl.RW_alpha:eye.RWS_rho,names_pattern = "(.*)\\.(.*)_(.*)",
+               names_to = c("source","model","param"),
+               values_to = "val")
+
+#looking at exp 1& 2
+model_param_long<-model_param_long_all%>%
+  dplyr::filter(exp_name%in%c("Exp. 1","Exp. 2"))
+
+
+# getting specfic param & models
+RWS_param<-model_param_long%>%
+  dplyr::filter(model=="RWS")%>%
+  dplyr::arrange(exp_name,sub_name,param,source)
+
+
+
+RWS_param_rho<-model_param_long%>%
+  dplyr::filter(model=="RWS")%>%
+  dplyr::filter(param=="rho")
+```
+
+```{r prep model_params by source for outlier removal}
+
+smry_stats_RWS_param<-RWS_param%>%
+  dplyr::group_by(source,param)%>%
+  get_summary_stats(type="mean_sd")%>%
+  dplyr::mutate(lo_cut=mean-(3*sd),hi_cut=mean+(3*sd))
+
+RWS_param_NO<-left_join(RWS_param,
+                        smry_stats_RWS_param%>%
+                          dplyr::select(source,param,lo_cut,hi_cut),
+                        by=c("source","param"))%>%
+  dplyr::filter(val>lo_cut & val<hi_cut)
+
+
+```
+
+```{r viz all RWS param NO ggpaired}
+# plot alpha difference  all experiments
+(plot_fig_5C<-
+  ggpaired(data =RWS_param_NO,
+           
+           x="source", y="val", id="sub_name", fill="source",line.color = "lightgrey",alpha=.1,line.size = .2  )+
+    scale_x_discrete(name= "Source", labels = c("Explicit", "Gaze"))+
+    # scale_y_continuous(name=expression(rho ))+
+    scale_fill_manual(values=color_vec_eye_expl_source)+
+    facet_wrap(~param,scales="free_y",
+               labeller =  label_parsed)+
+   theme_classic()+
+    theme(title = element_text(size = 18,face="bold"),
+          axis.title.x = element_text(size = 16,face="bold"),
+          axis.title.y = element_text(size = 16,face="bold"),
+          axis.text.x = element_text(size = 14,angle=0),
+          axis.text.y = element_text(size = 14,angle=0),
+          strip.text = element_text(size = 16,face="bold"),
+                    strip.background = element_blank(),
+
+          legend.position = "none")
+  
+)
+# ggsave(filename=file.path(path_export_main_pics,"plot_fig_5C_240624.pdf"),plot=plot_fig_5C,width=24,height=16,dpi=600, units="cm",device = "pdf")
+
+```
+
+
+
+
+
+This looks pretty good 
+
+Now lets 
+
+#### get stats of parameter comparison by source without excluding any outliers
+
+```{r print out parameter comparison by source}
+# first lets get the summary stats of each variable
+model_param_by_source_smry_stats<-model_param_long%>%
+  group_by(model,param,source)%>%
+  dplyr::summarise(mean=CI(val)[2],lo_ci=CI(val)[1],hi_=CI(val)[3],
+                   onesample_t=t.test(val)$statistic, onesample_pval=t.test(val)$p.value,
+                   ES=one_sample_ttest_cohen_d(val))
+knitr::kable(model_param_by_source_smry_stats,caption="summary stats of model by source",digits =4)
+
+
+
+
+# now let's look at comparison via source
+
+model_param_by_source_stats<-model_param_long%>%
+  group_by(model,param)%>%
+  dplyr::summarise(t_2sample=t.test(val~source,paired=TRUE)$statistic,
+                   p_2sample=t.test(val~source,paired=TRUE)$p.value,
+                   df=t.test(val~source,paired=TRUE)$parameter,
+                   is_sig=if_else(p_2sample<.05,1,0)
+  )
+
+
+
+knitr::kable(model_param_by_source_stats,caption="pairwise comparison of model param by source",digits =4)
+
+
+## getting stats of difference of parameter between sources 
+model_param_diff_by_source_stats<-RWS_param%>%
+  group_by(sub_name,model,param)%>%
+dplyr::mutate(diff_param=val-first(val))%>%
+    group_by(sub_name,model,param)%>%
+dplyr::filter(row_number()==2)%>%
+  dplyr::select(-source)%>%
+  dplyr::group_by(model,param)%>%
+  dplyr::summarise(mean_diff=CI(diff_param)[2],lo_ci=CI(diff_param)[3],hi_ci=CI(diff_param)[1],
+                   t=t.test(diff_param)$statistic,df=t.test(diff_param)$parameter, p.val=t.test(diff_param)$p.value)
+
+
+rho_rws<-model_param_long%>%
+  dplyr::filter(model=="RWS"& param=="rho")%>%
+  ungroup()%>%
+  rstatix::cohens_d(.,formula(val~source,paired=TRUE))
+
+## Running Bayesian paired ttest for 
+
+## Bayesian analysis of paired ttest- alpha
+#prep data- alpha
+RWS_alpha_by_source_bf_df<-model_param_long%>%
+  dplyr::filter(exp_name%in%c("Exp. 1", "Exp. 2"))%>%
+  dplyr::filter(model=="RWS")%>%
+  dplyr::filter(param=="alpha")%>%
+  pivot_wider(names_from = source,values_from = val)%>%
+  ungroup()%>%
+  as.data.frame()
+
+ttest_RWS_alpha_by_source_bf<-ttestBF(x=RWS_alpha_by_source_bf_df$expl,y=RWS_alpha_by_source_bf_df$eye,paired=TRUE)%>%
+  bayesfactor_models()
+ttest_RWS_alpha_by_source_bf<-ttest_RWS_alpha_by_source_bf%>%
+  dplyr::mutate(BF10=exp(1)^ttest_RWS_alpha_by_source_bf$log_BF)%>%
+  dplyr::mutate(BF01=1/BF10)
+
+knitr::kable(ttest_RWS_alpha_by_source_bf,digits=3,caption="BF Stats of RWS alpha by source (Exp 1&2)")
+
+
+#prep data beta
+RWS_beta_by_source_bf_df<-model_param_long%>%
+  dplyr::filter(exp_name%in%c("Exp. 1", "Exp. 2"))%>%
+  dplyr::filter(model=="RWS")%>%
+  dplyr::filter(param=="beta")%>%
+  pivot_wider(names_from = source,values_from = val)%>%
+  ungroup()%>%
+  as.data.frame()
+
+ttest_RWS_beta_by_source_bf<-ttestBF(x=RWS_beta_by_source_bf_df$expl,y=RWS_beta_by_source_bf_df$eye,paired=TRUE)%>%
+  bayesfactor_models()
+ttest_RWS_beta_by_source_bf<-ttest_RWS_beta_by_source_bf%>%
+  dplyr::mutate(BF10=exp(1)^ttest_RWS_beta_by_source_bf$log_BF)%>%
+  dplyr::mutate(BF01=1/BF10)
+
+knitr::kable(ttest_RWS_beta_by_source_bf,digits=3,caption="BF Stats of RWS BETA by source (Exp 1&2)")
+
+
+
+
+```
+
+### Fig. 5D: divergence rate of eye & explicit by P.choice
+
+
+```{r prep data to look at divergence rate by p choice fixed intervals with p choice by eye and resp}
+# binning prediction gz streng by pecentile
+##explicit
+dive_by_expl_pchoice_interval_sbs<-mean_gz_prereg_csv%>%
+  dplyr::filter(exp_name%in%c("Exp. 1","Exp. 2"))%>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  dplyr::mutate(pchoice_interval=findInterval(expl.RWS.p_choice,seq(0,1,by=0.25),left.open=TRUE))%>%
+  dplyr::relocate(pchoice_interval,.after = expl.RWS.p_choice)%>%
+  dplyr::group_by(exp_name,sub_name,pchoice_interval,eye_resp_match)%>%
+  dplyr::summarize(count=n())%>%
+  dplyr::group_by(exp_name,sub_name,pchoice_interval)%>%
+  dplyr::mutate(count_bin=sum(count))%>%
+  dplyr::filter(eye_resp_match=="diff")%>%
+  dplyr::mutate(porp_diff=count/count_bin)%>%
+  dplyr::select(-c(eye_resp_match))%>%
+  dplyr::mutate(source="explicit")
+
+
+# binning prediction gz streng by pecentile
+##explicit
+dive_by_eye_pchoice_interval_sbs<-mean_gz_prereg_csv%>%
+  dplyr::filter(exp_name%in%c("Exp. 1","Exp. 2"))%>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  dplyr::mutate(pchoice_interval=findInterval(eye.RWS.p_choice,seq(0,1,by=0.25)),left.open=TRUE)%>%
+  dplyr::relocate(pchoice_interval,.after = eye.RWS.p_choice)%>%
+  dplyr::group_by(exp_name,sub_name,pchoice_interval,eye_resp_match)%>%
+  dplyr::summarize(count=n())%>%
+  dplyr::group_by(exp_name,sub_name,pchoice_interval)%>%
+  dplyr::mutate(count_bin=sum(count))%>%
+  dplyr::filter(eye_resp_match=="diff")%>%
+  dplyr::mutate(porp_diff=count/count_bin)%>%
+  dplyr::select(-c(eye_resp_match))%>%
+  dplyr::mutate(source="eye")
+
+
+dive_by_source_pchoice_interval_grp<-bind_rows(dive_by_expl_pchoice_interval_sbs,dive_by_eye_pchoice_interval_sbs)%>%
+  drop_na(pchoice_interval)%>%
+  dplyr::mutate(porp_diff=porp_diff*100)%>%
+  dplyr::group_by(source,pchoice_interval)%>%
+  dplyr::summarise(m_diff=CI(porp_diff)[2],lo_ci=CI(porp_diff)[1],hi_ci=CI(porp_diff)[3])
+
+
+```
+
+#### let's look at exploratory vs. exploitation
+
+```{r prep data to look at conv_diver by explor_exploit}
+#get subject by subject
+dive_by_explor_exploit_sbs<-mean_gz_prereg_csv%>%
+  dplyr::filter(exp_name%in%c("Exp. 1","Exp. 2"))%>%
+  dplyr::rowwise()%>%
+  dplyr::mutate(explor_exploit=if_else(expl.RWS.p_choice<.5,"explor","exploit"))%>%
+  mutate(explor_exploit = factor(explor_exploit, levels = c("exploit", "explor"))) %>%
+  count(sub_name,explor_exploit,eye_resp_match, .drop = FALSE) %>%
+  group_by(sub_name,explor_exploit)%>%
+  dplyr::mutate(porp=n/sum(n))%>%
+  dplyr::filter(eye_resp_match=="diff")%>%
+  drop_na(explor_exploit)
+
+
+# group stats
+dive_by_explor_exploit_group<-dive_by_explor_exploit_sbs%>%
+  # dplyr::select(-n)%>%
+  drop_na(explor_exploit)%>%
+  dplyr::group_by(explor_exploit)%>%
+  dplyr::mutate(porp=porp*100)%>%
+  rstatix::get_summary_stats(porp,type = c("mean_ci"))%>%
+  dplyr::mutate(lo_ci=mean-ci,hi_ci=mean+ci)
+
+knitr::kable(dive_by_explor_exploit_group,caption="summary stats mean diverge by explor/exploit",digits=3)
+
+# run paired ttest
+
+#make sure that every subject has both exploration & exploitation
+dive_by_explor_exploit_sbs<-dive_by_explor_exploit_sbs%>%
+  dplyr::group_by(sub_name)%>%
+  dplyr::filter(n()==2)
+
+
+ttest_dive_by_explor_exploit<-t.test(data=dive_by_explor_exploit_sbs,
+                                     porp~explor_exploit,paired = TRUE)%>%
+  tidy()%>%
+  dplyr::select(statistic,p.value,parameter)%>%
+  dplyr::mutate(ES=rstatix::cohens_d(formula=porp~explor_exploit,
+                                     data=dive_by_explor_exploit_sbs%>%
+                                       dplyr::ungroup(), paired=TRUE)$effsize)
+
+knitr::kable(ttest_dive_by_explor_exploit,caption="paired ttest of diverge by explor/exploit",digits=4)
+
+```
+
+```{r viz Fig. 5D divergence rate by p choice fixed intervals with p choice by eye and resp}
+
+#modify data for plotting
+dive_by_source_pchoice_interval_grp<-dive_by_source_pchoice_interval_grp%>%
+  dplyr::mutate(pchoice_interval_graph=pchoice_interval-.5)
+
+(plot_fig_5D<-
+  ggplot(data=dive_by_source_pchoice_interval_grp,
+         aes(x=pchoice_interval_graph,y=m_diff,color=source,fill=source))+
+    geom_point(aes(y=m_diff,color=source),size=3)+
+    geom_path(aes(y=m_diff,color=source),size=1.5,alpha=.8,linewidth=1.5)+
+    geom_pointrange(aes(ymax=hi_ci,ymin=lo_ci),linewidth=2,fatten=2)+
+    scale_fill_manual(values = color_vec_eye_expl_source)+
+    scale_color_manual(values = color_vec_eye_expl_source)+
+    ylim(c(0,100))+
+    scale_x_continuous(name="P. Choice ",breaks=c(0:4),
+                       # labels=c("0 -.25",".25 -.50",".50 -.75",".75 - 1")
+                       labels=c("0 ",".25",".50",".75","1"),limits=c(0,4)
+    )+
+    
+    # scale_x_continuous(name="P. Choice [binned]",breaks=c(0:4),
+    #                    labels=c("0",".25",".50",".75","1"))+
+    labs(y= "% Response Divergence"
+    )+
+    geom_vline(xintercept = 2,linetype=2,color="darkgrey",linewidth=1.5)+
+    theme_classic()+
+    theme(axis.title.x = element_text(size = 14,face="bold"),
+          axis.title.y = element_text(size = 14,face="bold"),
+          axis.text.x = element_text(size = 14,angle=0),
+          axis.text.y = element_text(size = 10,angle=0),
+          legend.position = "top")
+)
+
+
+
+# ggsave(filename=file.path(path_export_main_pics,"plot_fig_5D.pdf"),plot=plot_fig_5D,width=24,height=16,dpi=600, units="cm",device = "pdf")
+
+```
+
+This is really neat
+
+
+
+## SM Fig S9-S13
+Here we are ruling out alternative explanations for ocular enhanced switchiness
+
+#### Plot Fig S9A: Motor Switching as opposed to rule switching
+
+Till now we looked at rule switching, but perhpas the eyes are more/less switch-y R/L (i.e if t-1 =R, t also R regardless of cue) and this results in more rule switchs. 
+```{r prep data to look at switching}
+# adding to mean_gz switch columns for eye & response
+mean_gz_prereg_csv<-mean_gz_prereg_csv%>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  dplyr::mutate(resp_switch=if_else(QuestionResult==lag(QuestionResult),0,1))%>%
+  dplyr::mutate(eye_switch=if_else(eye_resp==lag(eye_resp),0,1))%>%
+  dplyr::relocate(resp_switch,.after = QuestionResult)%>%
+  dplyr::relocate(eye_switch,.after = eye_resp)
+
+#gettig stats of switches
+
+switch_by_source<-mean_gz_prereg_csv%>%
+  dplyr::filter(is_trial_consec==1)%>%
+  dplyr::select(exp_name,sub_name,TrialNumber,resp_switch,eye_switch)%>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  dplyr::summarise(switch_resp=mean(resp_switch),
+                   switch_eye=mean(eye_switch))%>%
+  pivot_longer(cols=c(switch_resp,switch_eye),names_to = "source",values_to = "porp",names_prefix = "switch_")
+
+```
+
+```{r summary stats of motor switching}
+eye_expl_overall_motor_switch_by_exp<-switch_by_source%>%
+  dplyr::group_by(exp_name,source)%>%
+  dplyr::summarise(mean_porp=CI(porp)[2],lo_ci=CI(porp)[3],hi_ci=CI(porp)[1])
+
+
+eye_expl_overall_motor_switch_acrss_exp<-switch_by_source%>%
+  dplyr::filter(exp_name%in%c("Exp. 1", "Exp. 2"))%>%
+  dplyr::group_by(source)%>%
+  dplyr::summarise(mean_porp=CI(porp)[2],lo_ci=CI(porp)[3],hi_ci=CI(porp)[1])%>%
+  dplyr::mutate(exp_name="Exp.1 &2")
+
+eye_expl_overall_motor_switch_grp<-bind_rows(eye_expl_overall_motor_switch_by_exp,eye_expl_overall_motor_switch_acrss_exp)
+
+
+
+knitr::kable(eye_expl_overall_motor_switch_grp,digits=2,caption="Overall Motor switching by source")
+
+## Do stats of rule switching
+
+#get stat test of source acc
+ttest_motor_switch_by_source<-switch_by_source%>%
+  dplyr::filter(exp_name%in%c("Exp. 1", "Exp. 2"))%>%
+  dplyr::ungroup()%>%
+  dplyr::summarize(p.val=t.test(porp~source,paired=TRUE)$p.val,
+                   t=t.test(porp~source,paired=TRUE)$statistic,
+                   df=t.test(porp~source,paired=TRUE)$parameter,
+                   ES=cohens_d(.,formula=porp~source,paired=TRUE)$effsize)
+
+knitr::kable(ttest_motor_switch_by_source,digits=3,caption="Stats of Overall Rule switching by source (Exp 1&2)")
+
+
+## Bayesian analysis of paired ttest
+#prep data
+motor_switch_by_source_bf_df<-switch_by_source%>%
+  dplyr::filter(exp_name%in%c("Exp. 1", "Exp. 2"))%>%
+  pivot_wider(names_from = source,values_from = porp)%>%
+  ungroup()%>%
+  as.data.frame()
+
+ttest_motor_switch_by_source_bf<-ttestBF(x=motor_switch_by_source_bf_df$resp,y=motor_switch_by_source_bf_df$eye,paired=TRUE)%>%
+  bayesfactor_models()
+
+ttest_motor_switch_by_source_bf<-ttest_motor_switch_by_source_bf%>%
+  mutate(BF10=exp(1)^ttest_motor_switch_by_source_bf$log_BF)%>%
+  mutate(BF01=1/BF10)
+
+knitr::kable(ttest_motor_switch_by_source_bf,digits=3,caption="BF Stats of Overall Rule switching by source (Exp 1&2)")
+```
+
+```{r visualize overall  switching by source}
+
+(plot_SM_fig_S9A<-
+   ggpaired(data=switch_by_source%>%
+              dplyr::filter(exp_name%in%c("Exp. 1", "Exp. 2")),
+            x="source", y="porp", id="sub_name", fill="source",line.color = "lightgrey",alpha=.1,line.size = .2  )+
+   # scale_x_discrete(name= "Response Source")+
+   ylab("% Motor Switching")+
+   xlab("Response Source")+
+   scale_fill_manual(values = color_vec_eye_expl_source,limits=c("resp","eye"),labels=c("Explicit","Gaze"))+
+   scale_x_discrete(name="Source",limits=c("resp","eye"),labels=c("Explicit","Gaze"))+
+   theme_classic()+
+   theme(title = element_text(size = 18,face="bold"),
+         axis.title.x = element_text(size = 16,face="bold"),
+         axis.title.y = element_text(size = 16,face="bold"),
+         axis.text.x = element_text(size = 14,angle=0),
+         axis.text.y = element_text(size = 14,angle=0),
+         legend.position = "none",
+   )
+)
+
+# ggsave(plot = plot_SM_fig_S9A,filename = file.path(path_export_sm_pics,"SM_fig_S9A_motor_switch_by_source.jpg"))
+```
+
+So no difference in general switching of response. 
+This is pretty suprising!
+So the Eye's enhanced switch-ness cant be explained by "simple" perseverance (i.e. if previous trial was "R" next trial will also be "R")
+
+#### Fig. S9B: Effect of Rule switching and previous trial's ACC
+
+Here we are looking at each source contained within itself
+So for eye (P.Switch Eye| prev. trail's Eye response acc) vs. (P.Switch Resp| prev. trail's Resp response acc)
+
+```{r prp data for effect of rule switch and prev trials acc on eye_expl resp match}
+#get overall rule switching with previuos trial's accuracy matched per source
+# so prev acc is according to the source
+eye_expl_rule_switch_by_acc_tbt<-right_join(
+  mean_gz_prereg_csv%>% # here we transfering to long format the rule switch of each source
+    drop_na(is_rule_switch,eye_rule_switch,prev_eye_acc,prev_acc)%>%
+    dplyr::filter(is_trial_consec==1)%>%
+    dplyr::filter(is_trial_valid==1)%>%
+    dplyr::select(exp_name,sub_name,TrialNumber,is_rule_switch,eye_rule_switch)%>%
+    dplyr::rename(rule_switch_eye=eye_rule_switch,rule_switch_response=is_rule_switch)%>%
+    pivot_longer(cols=c(rule_switch_eye,rule_switch_response),names_to = "source",values_to = "rule_switch",names_prefix = "rule_switch_"),
+  
+  mean_gz_prereg_csv%>% # here we transfering to long format the previous trial's  of each source
+    drop_na(prev_eye_acc,prev_acc)%>%
+    dplyr::filter(is_trial_consec==1)%>%
+    dplyr::filter(is_trial_valid==1)%>%
+    dplyr::select(exp_name,sub_name,TrialNumber,prev_eye_acc,prev_acc,eye_acc,is_acc)%>%
+    dplyr::rename(prev_acc_eye=prev_eye_acc,prev_acc_response=prev_acc)%>%
+    pivot_longer(cols=c(prev_acc_eye,prev_acc_response),names_to = "source",values_to = "prev_acc",names_prefix = "prev_acc_"),
+  by=c("exp_name","sub_name","TrialNumber","source")
+)%>%
+  dplyr::arrange(exp_name,sub_name,TrialNumber,source)
+
+#getting subject-by-subject porp rule switching and difference if trial was correct vs. incorrect
+eye_expl_rule_switch_by_acc_sbs<-eye_expl_rule_switch_by_acc_tbt%>%
+  dplyr::group_by(exp_name,sub_name,source,prev_acc)%>%
+  dplyr::summarize(porp_switch=mean(rule_switch))%>%
+  dplyr::group_by(exp_name,sub_name,source)%>%
+  dplyr::mutate(diff=porp_switch-first(porp_switch))
+
+eye_expl_rule_switch_by_acc_sbs$prev_acc<-as.factor(eye_expl_rule_switch_by_acc_sbs$prev_acc)
+
+eye_expl_rule_switch_by_acc_sbs$source<-dplyr::case_match(eye_expl_rule_switch_by_acc_sbs$source,"eye"~"Gaze","response"~"Explicit")
+eye_expl_rule_switch_by_acc_sbs<-eye_expl_rule_switch_by_acc_sbs%>%
+  dplyr::mutate(porp_switch=porp_switch*100)
+```
+
+
+```{r run statistics of rule switching contained with each source}
+
+# get switch rate per source by previous trial's accuracy
+eye_expl_rule_switch_by_acc_smry_stats<-bind_rows(eye_expl_rule_switch_by_acc_sbs%>%
+                                                    dplyr::group_by(exp_name,source,prev_acc)%>%
+                                                    # dplyr::filter(diff!=0)%>%
+                                                    dplyr::summarise(mean_pswitch=CI(porp_switch)[2],lo_ci=CI(porp_switch)[3],hi_ci=CI(porp_switch)[1]),
+                                                  ## getting same for wxp 1& 2 combined
+                                                  eye_expl_rule_switch_by_acc_sbs%>%
+                                                    dplyr::filter(exp_name%in%c("Exp. 1", "Exp. 2"))%>%
+                                                    dplyr::group_by(source,prev_acc)%>%
+                                                    # dplyr::filter(diff!=0)%>%
+                                                    dplyr::summarise(mean_pswitch=CI(porp_switch)[2],lo_ci=CI(porp_switch)[3],hi_ci=CI(porp_switch)[1],exp_name="Exp 1&2")
+)
+
+
+#get summary statistics of difference in rule switch following prev trail correct/incorrect 
+eye_expl_diff_rule_switch_by_acc_by_exp<-eye_expl_rule_switch_by_acc_sbs%>%
+  dplyr::group_by(exp_name,source)%>%
+  dplyr::filter(diff!=0)%>%
+  dplyr::summarise(mean_diff=CI(diff)[2],lo_ci=CI(diff)[3],hi_ci=CI(diff)[1])
+
+
+## run statistics
+#1. Now we can do stats to test if there is a difference in modulation of prev. trial's acc on switching by source
+t_test_diff_eye_expl_rule_switch_by_acc<-eye_expl_rule_switch_by_acc_sbs%>%
+  dplyr::filter(diff!=0)%>%
+  dplyr::filter(exp_name%in%c("Exp. 1", "Exp. 2"))%>%
+  dplyr::ungroup()%>%
+  dplyr::arrange(sub_name)%>%
+  dplyr::summarise(p.val=t.test(diff~source,paired=TRUE)$p.val,
+                   t=t.test(diff~source,paired=TRUE)$statistic,
+                   df=t.test(diff~source,paired=TRUE)$parameter,
+                   ES=cohens_d(.,formula=diff~source,paired=TRUE)$effsize)
+
+
+#2. we can run a two way RM-ANOVA
+res.aov_eye_expl_rule_switch_by_prev_acc_by_source <- rstatix::anova_test(
+  data = eye_expl_rule_switch_by_acc_sbs%>%
+    dplyr::filter(exp_name%in%c("Exp. 1", "Exp. 2"))%>%
+    ungroup(),
+  dv=porp_switch,wid = sub_name,within=c(prev_acc,source),
+  
+  effect.size="pes"
+  
+)%>%get_anova_table()
+
+
+get_anova_table(res.aov_eye_expl_rule_switch_by_prev_acc_by_source)
+
+
+
+knitr::kable(eye_expl_rule_switch_by_acc_smry_stats,digits=3,caption="Summary Stats of P. Rule switching by source & prev trial acc")
+
+knitr::kable(res.aov_eye_expl_rule_switch_by_prev_acc_by_source,digits=3,caption="RM-ANOVA of Rule switching by source & prev trial acc (Exp. 1&2")
+
+
+## Run bayesian stats on Anova Interaction
+
+eye_expl_rule_switch_by_acc_df<-as.data.frame(eye_expl_rule_switch_by_acc_sbs%>%
+                                                dplyr::filter(exp_name%in%c("Exp. 1", "Exp. 2"))%>%
+                                                ungroup()%>%
+                                                dplyr::select(-c(diff,exp_name))
+)
+
+eye_expl_rule_switch_by_acc_df$prev_acc<-factor(eye_expl_rule_switch_by_acc_df$prev_acc)
+eye_expl_rule_switch_by_acc_df$source<-factor(eye_expl_rule_switch_by_acc_df$source)
+eye_expl_rule_switch_by_acc_df$sub_name<-factor(eye_expl_rule_switch_by_acc_df$sub_name)
+
+
+
+rm_aov_bf_porp_switch<-anovaBF(porp_switch ~ prev_acc*source + sub_name, whichRandom = "sub_name",data=eye_expl_rule_switch_by_acc_df,
+                               whichModels = "top",
+)
+
+res.rm_aov_bf_porp_switch<-rm_aov_bf_porp_switch%>%bayesfactor_models()
+
+knitr::kable(res.rm_aov_bf_porp_switch,digits=3, caption="Bayesian rmANOVA for rule switching by prev_acc& rule switching")
+```
+
+So it doesn't seem that there is a signfiacnt interaction between source & previous trial's acc 
+So Eyes are not more switch-y following errors relative to Explicit Response
+
+
+Let's try plotting it
+
+```{r visualize porp rule switching by previous trials accuracy}
+#recoding for viz
+eye_expl_rule_switch_by_acc_for_viz<-eye_expl_rule_switch_by_acc_sbs%>%
+               dplyr::filter(exp_name%in%c("Exp. 1", "Exp. 2"))
+
+eye_expl_rule_switch_by_acc_for_viz$prev_acc<-case_match(eye_expl_rule_switch_by_acc_for_viz$prev_acc,
+                                                         "0"~"incorrect",
+                                                         "1"~"correct")
+
+eye_expl_rule_switch_by_acc_for_viz$source<-case_match(eye_expl_rule_switch_by_acc_for_viz$source,
+                                                         "Gaze"~"Ocular",
+                                                       "Explicit"~"Explicit"
+                                                         )
+
+(plot_SM_fig_S9B<-
+    ggpaired(data=eye_expl_rule_switch_by_acc_for_viz%>%
+               dplyr::filter(exp_name%in%c("Exp. 1", "Exp. 2")),
+             x="prev_acc", y="porp_switch", id="sub_name", color="prev_acc" ,fill="source",line.color = "lightgrey",alpha=.1,line.size = .2 )+
+    ylab("% Rule Switching")+
+    scale_fill_manual(values = color_vec_eye_expl_source)+
+    scale_color_manual(values=c("red","darkolivegreen"))+
+    xlab("Prev. Trial's Accuracy")+
+    facet_wrap(~source)+
+   theme_classic()+
+    theme(axis.title = element_text(size = 16,face="bold"),
+      axis.title.x = element_text(size = 16,face="bold"),
+          axis.title.y = element_text(size = 16,face="bold"),
+          axis.text.x = element_text(size = 14),
+          axis.text.y = element_text(size = 14,angle=0),
+      strip.text = element_text(size = 16,face="bold"),
+          strip.background = element_blank(),
+      legend.position = "none"
+    )
+ 
+  
+)
+
+# ggsave(plot = plot_SM_fig_S9B,filename = file.path(path_export_sm_pics,"SM_fig_S9B_rule_switch_by_prev_acc_source.jpg"))
+
+```
+
+
+So there is no interaction It isn't that eyes switch more after an error as opposed to explicit responses
+
+#### diving into beta differences & Fig S10
+because of the skewness of beta values we test in a number of ways:
+1. regular t-test
+2. t-test of log values
+3. non-parameteric wilcox
+4. bootstrapping of difference
+5. t-test of beta wheen fitted with upper boundary at 15
+
+```{r run assortment of statistical tests on difference of beta values}
+# 1. try regular t-test
+reg_ttest_beta<-t.test(data=RWS_param%>%dplyr::filter(param=="beta"),
+                       val~source,paired=TRUE)%>%
+  tidy()%>%
+  dplyr::select(statistic,p.value)%>%
+  dplyr::mutate(method="reg. ttest")
+# 2. Try ttest of log transformed 
+
+RWS_log_beta<-RWS_param%>%
+  dplyr::filter(param=="beta")%>%
+  dplyr::mutate(log_val=log(val))%>%
+  dplyr::mutate(log_val=if_else(val==0,0,log_val))%>% #if value was 0 log is Na so we replace with 0
+  dplyr::ungroup()
+
+
+log_ttest_beta<-t.test(data=RWS_log_beta,
+                       log_val~source,paired=TRUE)%>%
+  tidy()%>%
+  dplyr::select(statistic,p.value)%>%
+  dplyr::mutate(method="log-transform ttest")
+
+#3. non-parameteric wilcox of difference
+RWS_beta_diff<-RWS_log_beta%>%
+  dplyr::group_by(sub_name)%>%
+  dplyr::mutate(diff=val-first(val))%>%
+  dplyr::filter(diff!=0)
+
+wilcox_beta_diff<-wilcox.test(RWS_beta_diff$diff, 
+                              conf.int = TRUE, 
+                              conf.level = 0.95, 
+                              exact = FALSE)%>%
+  tidy()%>%
+  dplyr::select(statistic,p.value,method)
+
+#4. bootstrapping of difference 
+winsr_param<-20
+##preping into wide format
+RWS_beta_wide<-RWS_param%>%
+  dplyr::filter(param=="beta")%>%
+  dplyr::select(sub_name,source,val)%>%
+  pivot_wider(values_from = val,names_from = source)%>%
+  dplyr::rowwise()%>%
+  dplyr::mutate(expl_wins=if_else(expl>winsr_param,winsr_param,expl), # winsorizing 
+                eye_wins=if_else(eye>winsr_param,winsr_param,eye)
+  )
+
+#running custo function
+bootstrap_beta_diff<-bootstrap_beta_diff_fun(RWS_beta_wide)
+
+
+#trying with winsorized beta at 20
+ttest_beta_wins_l20_res<-t.test(x=RWS_beta_wide$expl_wins,y=RWS_beta_wide$eye_wins,paired=TRUE)%>%
+  tidy()%>%
+  dplyr::select(statistic,p.value)%>%
+  dplyr::mutate(method=sprintf("ttest winsorize beta (%d)",winsr_param))
+
+##binding it all together
+RWS_beta_by_source_stats<-bind_rows(reg_ttest_beta,log_ttest_beta )%>%
+  bind_rows(.,wilcox_beta_diff)%>%
+  bind_rows(.,ttest_beta_wins_l20_res)%>%
+  # bind_rows(.,ttest_beta_l15_res)%>%
+  mutate(statistic=as.character(round(statistic,4)))%>%
+  bind_rows(.,bootstrap_beta_diff)
+
+knitr::kable(RWS_beta_by_source_stats,caption = "diff statistacl tests of beta by source",digits=4)
+```
+
+#### SM Figure S10 beta comparison unfiltered
+```{r prep data to viz beta unfiltered}
+beta_unfilter_for_viz<-RWS_param%>%
+  dplyr::filter(param=="beta")%>%
+  dplyr::rename("Raw"=val)%>%
+  dplyr::mutate(Winsor=if_else(Raw>winsr_param,winsr_param,Raw))%>%
+  pivot_longer(cols=c(Raw,Winsor),values_to = "value",names_to = "transform")
+
+
+(plot_SM_fig_S10<-  ggpaired(data =beta_unfilter_for_viz,
+           x="source", y="value", id="sub_name", 
+           fill="source",line.color = "lightgrey",alpha=.1,line.size = .2 )+
+    scale_x_discrete(name= "Source", labels = c("Explicit", "Gaze"))+
+    # scale_y_continuous(name=expression(rho ))+
+    scale_fill_manual(values=color_vec_eye_expl_source)+
+    facet_wrap(~transform,scales="free_y",
+               labeller =  label_parsed)+
+   theme_classic()+
+    theme(title = element_text(size = 18,face="bold"),
+          axis.title.x = element_text(size = 16,face="bold"),
+          axis.title.y = element_text(size = 16,face="bold"),
+          axis.text.x = element_text(size = 14,angle=0),
+          axis.text.y = element_text(size = 14,angle=0),
+          strip.text = element_text(size = 16,face="bold"),
+                    strip.background = element_blank(),
+
+          legend.position = "none")
+)
+
+# ggsave(plot = plot_SM_fig_S10,filename = file.path(path_export_sm_pics,"SM_fig_S10.jpg"), width=15, units = "cm")
+```
+
+
+
+#### Fig S11
+
+So let's look per model & parameter
+
+```{r prep data for correaltion of model params by source}
+
+winsr_param<-20
+##preping transformed beta values
+beta_transformed_wide<-model_param_long%>%
+  dplyr::filter(param=="beta")%>%
+  dplyr::mutate(beta_wins=if_else(val>winsr_param,winsr_param,val),
+                log_beta=log(val))%>%
+  dplyr::select(sub_name,model,source,beta_wins,log_beta)%>%
+  pivot_longer(cols=c(beta_wins,log_beta),values_to = "val",names_to = "param")%>%
+  pivot_wider(values_from = val,names_from = source)
+
+
+
+# correlate parameters both raw and transformed (beta) 
+cor_param_by_source<-model_param_long%>%
+  
+  dplyr::filter(exp_name%in%c("Exp. 1","Exp. 2"))%>%
+  
+  pivot_wider(names_from = "source",values_from = "val")%>%
+  bind_rows(.,beta_transformed_wide)%>% 
+  dplyr::group_by(model,param)%>%
+  dplyr::arrange(model,param)%>%
+  dplyr::filter(is.finite(expl) & is.finite(eye))%>%
+  cor_test(expl,eye)
+
+knitr::kable(cor_param_by_source,digits=3, caption = "model parameters correlation by source ")
+
+knitr::kable(cor_param_by_source%>%dplyr::filter(model=="RWS"),digits=3, caption = "model parameters correlation by source (RWS only)")
+## Doing Bayesian correlation
+
+# orgainze data into wide(ish) format
+param_by_source_wide<-model_param_long%>%
+  dplyr::filter(exp_name%in%c("Exp. 1","Exp. 2"))%>%
+  pivot_wider(names_from = "source",values_from = "val")%>%
+  bind_rows(.,beta_transformed_wide)%>% 
+  dplyr::group_by(model,param)%>%
+  dplyr::arrange(model,param)%>%
+  dplyr::filter(is.finite(expl) & is.finite(eye))
+
+##rho
+rho_by_source_wide<-param_by_source_wide%>%
+  dplyr::filter(model=="RWS")%>%
+  dplyr::filter(param=="rho")
+
+
+BF_corr_rho_by_source<-correlationBF(rho_by_source_wide$expl,rho_by_source_wide$eye)%>%
+  bayesfactor_models()
+
+#transforming from log 
+BF_corr_rho_by_source<-exp(1)^BF_corr_rho_by_source$log_BF[2]
+
+
+##beta
+beta_by_source_wide<-param_by_source_wide%>%
+  dplyr::filter(model=="RWS")%>%
+  dplyr::filter(param=="beta")
+
+BF_corr_beta_by_source<-correlationBF(beta_by_source_wide$expl,beta_by_source_wide$eye)%>%
+  bayesfactor_models()
+
+#transforming from log 
+BF_corr_beta_by_source<-exp(1)^BF_corr_beta_by_source$log_BF[2]
+
+
+##log_beta
+log_beta_by_source_wide<-param_by_source_wide%>%
+  dplyr::filter(model=="RWS")%>%
+  dplyr::filter(param=="log_beta")
+
+BF_corr_log_beta_by_source<-correlationBF(log_beta_by_source_wide$expl,log_beta_by_source_wide$eye)%>%
+  bayesfactor_models()
+
+#transforming from log 
+BF_corr_log_beta_by_source<-exp(1)^BF_corr_log_beta_by_source$log_BF[2]
+
+## Winsorized_beta
+beta_wins_by_source_wide<-param_by_source_wide%>%
+  dplyr::filter(model=="RWS")%>%
+  dplyr::filter(param=="beta_wins")
+
+BF_corr_beta_wins_by_source<-correlationBF(beta_wins_by_source_wide$expl,beta_wins_by_source_wide$eye)%>%
+  bayesfactor_models()
+
+#transforming from log 
+BF_corr_beta_wins_by_source<-exp(1)^BF_corr_beta_wins_by_source$log_BF[2]
+
+BF_corr_by_source_df<-tibble(param=c("rho","beta","log beta","Winsorized beta"),
+                               BF01=1/c(BF_corr_rho_by_source,
+                                       BF_corr_beta_by_source,
+                                       BF_corr_log_beta_by_source,
+                                       BF_corr_beta_wins_by_source))
+
+knitr::kable(BF_corr_by_source_df,digits=3, caption = "BF01 for null corr of RWS model parameters  by source ")
+
+```
+
+```{r viz correaltion of model params by source }
+
+##prep data (remove more <3SD)
+param_by_source_for_viz<-model_param_long%>%
+           dplyr::filter(model=="RWS")%>%
+    dplyr::group_by(param,source)%>%
+  dplyr::mutate(up_3sd=mean(val)+3*sd(val),lo_3sd=mean(val)-3*sd(val))%>%
+  dplyr::filter(val<up_3sd& val>lo_3sd )%>%
+  dplyr::select(-c(up_3sd,lo_3sd))%>%
+  pivot_wider(names_from = "source",values_from = "val")
+
+cor_param_by_source_for_viz<-param_by_source_for_viz%>%
+ cor_test(expl,eye)
+
+knitr::kable(cor_param_by_source,digits=3, caption = "model parameters correlation by source ")
+#Visuzlaining
+(plot_SM_fig_S11<-
+  ggplot(data=param_by_source_for_viz,
+         aes(x=expl,y=eye))+
+    xlab("Explicit")+
+    ylab("Gaze")+
+    geom_point()+
+    geom_smooth(method = "lm", se = TRUE, color = "lightblue")+
+    facet_wrap(~param,scales = "free",labeller =  label_parsed)+
+    theme_classic()+
+    theme(axis.title.x = element_text(size = 14,face="bold"),
+          axis.title.y = element_text(size = 14,face="bold"),
+          axis.text.x = element_text(size = 14,angle=0),
+          axis.text.y = element_text(size = 10,angle=0),
+          strip.text = element_text(size = 14,face="bold"),
+          strip.background = element_blank()
+
+    )
+  
+)
+
+
+# ggsave(plot = plot_SM_fig_S11,filename = file.path(path_export_sm_pics,"SM_fig_S11.jpg"))
+
+```
+
+
+
+### Figue S12 Accurcy on Diverging and converging trials
+
+
+Here we look whether response accuracy tends to be higher when eye/explicit responses converge vs. diverge
+
+
+```{r prep data to look at overall acc by converge_divergen}
+acc_by_eye_resp_conv_sbs<-mean_gz_prereg_csv%>%
+  dplyr::filter(exp_name%in%c("Exp. 1", "Exp. 2"))%>%
+  dplyr::group_by(exp_name,sub_name,eye_resp_match)%>%
+  dplyr::summarise(rule_acc_resp=mean(resp_rule_acc),
+                   rule_acc_eye=mean(eye_rule_acc))%>%
+  pivot_longer(cols = c(rule_acc_resp,rule_acc_eye),names_to = "source",values_to = "acc",names_prefix = "rule_acc_")
+
+
+#getting summary stats
+
+acc_by_eye_resp_conv_by_exp<-acc_by_eye_resp_conv_sbs%>%
+  dplyr::group_by(exp_name,eye_resp_match,source)%>%
+  dplyr::summarise(mean_acc=CI(acc)[2],lo_ci=CI(acc)[3],hi_ci=CI(acc)[1])
+
+acc_by_eye_resp_conv_acrss_exp<-acc_by_eye_resp_conv_sbs%>%
+  dplyr::group_by(eye_resp_match,source)%>%
+  dplyr::summarise(mean_acc=CI(acc)[2],lo_ci=CI(acc)[3],hi_ci=CI(acc)[1])%>%
+  dplyr::mutate(exp_name="Exp.1&2")
+
+acc_by_eye_resp_conv_grp<-bind_rows(acc_by_eye_resp_conv_by_exp,acc_by_eye_resp_conv_acrss_exp)
+
+knitr::kable(acc_by_eye_resp_conv_grp,caption="summary stats of acc by conv/div & source", digits= 3)
+
+
+## Run paired ttest
+t_test_acc_by_eye_resp_conv<-t.test(formula=acc~eye_resp_match,
+                                    data=acc_by_eye_resp_conv_sbs%>%
+                                      dplyr::filter(source=="resp")%>%
+                                      dplyr::ungroup(),
+                                    paired=TRUE
+)%>%
+  tidy()%>%
+  dplyr::select(statistic,p.value,parameter)%>%
+  dplyr::mutate(ES=rstatix::cohens_d(formula=acc~eye_resp_match,
+                                     data=acc_by_eye_resp_conv_sbs%>%
+                                       dplyr::filter(source=="resp")%>%
+                                       dplyr::ungroup(), paired=TRUE)$effsize)
+
+knitr::kable(t_test_acc_by_eye_resp_conv,caption = "ttest results of resp acc by conv/diver",digits=4)
+```
+
+```{r viz Figue S12 Accurcy on Diverging and converging trials}
+
+acc_by_eye_resp_conv_sbs<-acc_by_eye_resp_conv_sbs%>%
+  dplyr::mutate(acc=acc*100)
+(
+  plot_SM_fig_S12<-
+    ggpaired(data =acc_by_eye_resp_conv_sbs%>%dplyr::filter(source=="resp"),
+                           x="eye_resp_match", y="acc", id="sub_name", fill="eye_resp_match",line.color = "lightgrey",alpha=.1,line.size = .2 )+
+    scale_x_discrete(name="Explicit - Ocular",labels=c("same"="Converge", "diff"="Diverge"),limits=c("same","diff"))+
+    # ylim(c(0,100))+
+    
+    ylab("% Correct")+
+    scale_fill_manual(values = c("#CCCCCC","#707070"))+
+    
+    theme_classic()+
+    theme(axis.text.y =element_text(size=14),
+          axis.title.y=element_text(size=16,face="bold"),
+          axis.text.x =element_text(size=14), 
+          axis.title.x=element_text(size=16,face="bold"),
+          legend.position = "none"
+          )
+)
+
+# 
+# # Panel B- lookat Gaze accuracy
+# 
+# (
+#   plot_SM_fig_S12B<-
+#     ggpaired(data =acc_by_eye_resp_conv_sbs%>%dplyr::filter(source=="eye"),
+#                            x="eye_resp_match", y="acc", id="sub_name", fill="eye_resp_match",line.color = "lightgrey",alpha=.1,line.size = .2 )+
+#     scale_x_discrete(name="Explicit - Ocular",labels=c("same"="Converge", "diff"="Diverge"),limits=c("same","diff"))+
+#     ylab("% Correct (Gaze)")+
+#         ylim(c(0,100))+
+# 
+#     scale_fill_manual(values = c("#CCCCCC","#707070"))+
+#     
+#     theme_classic()+
+#     theme(axis.text.y =element_text(size=14),
+#           axis.title.y=element_text(size=16,face="bold"),
+#           axis.text.x =element_text(size=14), 
+#           axis.title.x=element_text(size=16,face="bold"),
+#           legend.position = "none"
+#           )
+# )
+
+
+# ggsave(plot = plot_SM_fig_S12,filename = file.path(path_export_sm_pics,"SM_fig_S12.jpg"))
+# ggsave(plot = plot_SM_fig_S12B,filename = file.path(path_export_sm_pics,"SM_fig_S12B.jpg"))
+
+```
+
+
+### SM figure S13: 
+diverge % by explore/exploit trials P. Choice
+
+```{r viz Plot SM figure S13}
+#get divergence rate by explicit P choice
+dive_by_explor_exploit_expl_sbs<-mean_gz_prereg_csv%>%
+  dplyr::filter(exp_name%in%c("Exp. 1","Exp. 2"))%>%
+  dplyr::rowwise()%>%
+  dplyr::mutate(explor_exploit=if_else(expl.RWS.p_choice<.5,"explor","exploit"))%>%
+  mutate(explor_exploit = factor(explor_exploit, levels = c("exploit", "explor"))) %>%
+  count(sub_name,explor_exploit,eye_resp_match, .drop = FALSE) %>%
+  group_by(sub_name,explor_exploit)%>%
+  dplyr::mutate(dive_porp=n/sum(n))%>%
+  dplyr::filter(eye_resp_match=="diff")%>%
+  drop_na(explor_exploit)%>%
+  dplyr::mutate(source="Explicit")%>%
+  dplyr::select(-c(eye_resp_match,n))
+
+
+#get divergence rate by Ocular P choice
+dive_by_explor_exploit_gaze_sbs<-mean_gz_prereg_csv%>%
+  dplyr::filter(exp_name%in%c("Exp. 1","Exp. 2"))%>%
+  dplyr::rowwise()%>%
+  dplyr::mutate(explor_exploit=if_else(eye.RWS.p_choice<.5,"explor","exploit"))%>%
+  mutate(explor_exploit = factor(explor_exploit, levels = c("exploit", "explor"))) %>%
+  count(sub_name,explor_exploit,eye_resp_match, .drop = FALSE) %>%
+  group_by(sub_name,explor_exploit)%>%
+  dplyr::mutate(dive_porp=n/sum(n))%>%
+  dplyr::filter(eye_resp_match=="diff")%>%
+  drop_na(explor_exploit)%>%
+  dplyr::mutate(source="Gaze")%>%
+  dplyr::select(-c(eye_resp_match,n))
+
+
+dive_by_explor_exploit_comb_sbs<-bind_rows(dive_by_explor_exploit_expl_sbs,
+                                           dive_by_explor_exploit_gaze_sbs)%>%
+  dplyr::arrange(sub_name)%>%
+  dplyr::mutate(dive_porp=dive_porp*100)
+
+
+ttest_dive_by_expl_explor_exploit<-t.test(data=dive_by_explor_exploit_comb_sbs%>%
+                                            dplyr::filter(source=="Explicit")%>%
+                                            dplyr::group_by(sub_name)%>%
+                                            dplyr::filter(n()==2)%>%
+                                            dplyr::ungroup(),
+                                     dive_porp~explor_exploit,paired = TRUE)%>%
+  tidy()%>%
+  dplyr::select(statistic,p.value,parameter)%>%
+  dplyr::mutate(ES=rstatix::cohens_d(formula=dive_porp~explor_exploit,
+                                     data=dive_by_explor_exploit_comb_sbs%>%
+                                            dplyr::filter(source=="Explicit")%>%
+                                            dplyr::group_by(sub_name)%>%
+                                            dplyr::filter(n()==2)%>%
+                                            dplyr::ungroup(),
+                                     
+                                     paired=TRUE)$effsize,
+                'p. Choice source'="Explicit")
+
+
+ttest_dive_by_gaze_explor_exploit<-t.test(data=dive_by_explor_exploit_comb_sbs%>%
+                                            dplyr::filter(source=="Gaze")%>%
+                                            dplyr::group_by(sub_name)%>%
+                                            dplyr::filter(n()==2)%>%
+                                            dplyr::ungroup(),
+                                     dive_porp~explor_exploit,paired = TRUE)%>%
+  tidy()%>%
+  dplyr::select(statistic,p.value,parameter)%>%
+  dplyr::mutate(ES=rstatix::cohens_d(formula=dive_porp~explor_exploit,
+                                     data=dive_by_explor_exploit_comb_sbs%>%
+                                            dplyr::filter(source=="Gaze")%>%
+                                            dplyr::group_by(sub_name)%>%
+                                            dplyr::filter(n()==2)%>%
+                                            dplyr::ungroup(),
+                                     
+                                     paired=TRUE)$effsize,
+                'p. Choice source'="Gaze")
+
+
+knitr::kable(bind_rows(ttest_dive_by_expl_explor_exploit,ttest_dive_by_gaze_explor_exploit),
+             caption="paired ttest of diverge by explor/exploit by pchoice different source",digits=3)
+
+
+## Viz
+(
+  plot_SM_fig_S13<-
+    ggpaired(data =dive_by_explor_exploit_comb_sbs,
+                           x="explor_exploit", y="dive_porp", id="sub_name", fill="explor_exploit",line.color = "lightgrey",alpha=.1,line.size = .2 )+
+    scale_x_discrete(name="Choice Strategy",labels=c("exploit"="Exploitatioin", "explor"="Exploration"),limits=c("explor","exploit"))+
+    # ylim(c(0,100))+
+    
+    ylab("% Divergence Trails")+
+    scale_fill_manual(values = c("darkorchid3","darkolivegreen3"))+
+    
+    theme_classic()+
+
+    facet_wrap(~source)+
+    theme(axis.text.y =element_text(size=14),
+          axis.title.y=element_text(size=16,face="bold"),
+          axis.text.x =element_text(size=14), 
+          axis.title.x=element_text(size=16,face="bold"),
+          legend.position = "none",
+          strip.background = element_blank(),
+               strip.text = element_text(size = 16,face="bold")
+
+          )
+)
+
+# ggsave(plot = plot_SM_fig_S13,filename = file.path(path_export_sm_pics,"SM_fig_S13.jpg"))
+
+```
+
+
+## SM Fig S14-18
+These are additional analyses of Pre-Registartion of Exp. 3
+
+### Hypothesis H3a: Confidence decreases following errors: 
+From the pre-reg "we anticipate that confidence will decrease after trials in which the participant’s response was incorrect as opposed to correct. This will be tested across participants using a paired t-test to compare confidence ratings following previous trials in which the response was correct/incorrect"
+
+```{r prep data to examine in exp 3 whether confidence is reduced following an error( H3a of pre-reg)}
+conf_prev_acc_ps<-mean_gz_prereg_csv%>%
+  dplyr::filter(exp_name%in%c("Exp. 3"))%>%
+  dplyr::rowwise()%>%
+  dplyr::filter(!is.na(prev_acc))%>%
+  dplyr::group_by(sub_name,prev_acc)%>%
+  dplyr::summarise(m_conf=mean(conf_rating))
+
+
+#for each experiment seperately
+smry_stats_conf_prev_acc<-conf_prev_acc_ps%>%
+  dplyr::group_by(sub_name)%>%
+  dplyr::mutate(diff_conf=m_conf-first(m_conf))%>%
+  dplyr::filter(diff_conf!=0)%>%
+  dplyr::ungroup()%>%
+  dplyr::summarise(mean_diff=CI(diff_conf)[2],lo_ci=CI(diff_conf)[3],hi_ci=CI(diff_conf)[1],
+                   t=t.test(diff_conf,mu=0)$statistic,df=t.test(diff_conf,mu=0)$parameter, p.val=t.test(diff_conf,mu=0)$p.value, ES=one_sample_ttest_cohen_d(diff_conf))
+
+
+knitr::kable(smry_stats_conf_prev_acc,digits=2,caption = "smry stats conf by prev. trial acc")
+
+```
+
+#### Fig. S14A
+
+```{r visualize group  data confidence after mistakes}
+#Vizulaize
+
+(
+  plot_SM_fig_S14<-
+    ggpaired(data =conf_prev_acc_ps,
+             x="prev_acc", y="m_conf", id="sub_name", fill="prev_acc" )+
+    scale_x_discrete(name= "previous trial accuracy",labels=c("error","correct"))+
+    scale_fill_discrete(name= "previous trial accuracy",labels=c("error","correct"))+
+    
+    scale_y_continuous(name="Confidence")+
+    # ggtitle("Explicit confidence ratings by previous trial's ACC",
+    #         subtitle = sprintf("diff= %.3f, p= %.3f, Cohen's d'= %.3f",
+    #                            t.test(data=conf_prev_acc_ps, m_conf~prev_acc, paired=TRUE)$estimate,
+    #                            t.test(data=conf_prev_acc_ps, m_conf~prev_acc, paired=TRUE)$p.value,
+    #                            cohens_d(data=conf_prev_acc_ps%>%ungroup(), m_conf~prev_acc, paired=TRUE)$effsize)+
+    # scale_fill_discrete"previous trial acc"()
+    theme(axis.text.y =element_text(size=14),
+          axis.title.y=element_text(size=16,face="bold"),
+          axis.text.x =element_text(size=14), 
+          axis.title.x=element_text(size=16,face="bold"),
+          # legend.position = "none",
+          strip.background = element_blank(),
+          strip.text = element_text(size = 16,face="bold")
+          
+    )
+)
+
+
+# ggsave(plot = plot_SM_fig_S14,filename = file.path(path_export_sm_pics,"SM_fig_S14_exp3_conf_decrease_error.jpg"), width=15, units = "cm")
+```
+
+
+
+#### Pre reg EXP 3- H3A:  confidence learning curve
+"Further supporting the idea that confidence tracks learning we expect confidence to exhibit a learning curve. Within a block (a series of trials that follow the same underlying rule), we expect normalized confidence ratings to exhibit a learning curve that is characterized by a monotonic increase during the early trials until an asymptote is reached"
+
+
+``` {r prep data to examine in exp 3 whether confidence  exhibits learning curve (H3a of pre-reg) }
+#subject by subject relative accuracy-binned
+sbs_rel_trial_conf_bin<-mean_gz_prereg_exp3%>%
+  dplyr::filter(exp_name%in%c("Exp. 3"))%>%
+  dplyr::rowwise()%>%
+  dplyr::mutate(bin_ind=findInterval(rel_trial_number,seq(1,36,by=4)))%>%
+  dplyr::group_by(sub_name,bin_ind)%>%
+  dplyr::summarize(rel_conf=mean(z_conf_rating))%>%
+  dplyr::mutate(source="expl")
+
+
+#group statistic-binned
+sum_rel_trial_conf_bin<-sbs_rel_trial_conf_bin%>%
+  dplyr::group_by(bin_ind,source)%>%
+  dplyr::summarize(lo_ci=CI(rel_conf)[3],hi_ci=CI(rel_conf)[1],mean_conf=CI(rel_conf)[2])
+
+```
+
+#### Fig. S14B
+
+```{r plot confidence as function of relative block number , fig.show="hold", out.width="50%"}
+#plot learning within block binned by 4 trial 
+
+( plot_SM_fig_S14B<-
+  ggplot(data=sum_rel_trial_conf_bin%>%dplyr::filter(bin_ind<9),aes(x=bin_ind,y=mean_conf))+
+   geom_line()+
+   geom_point()+
+   geom_ribbon(aes(ymin=lo_ci ,ymax=hi_ci),alpha=.3, color=NA,fill="lightgrey")+
+   # geom_line(data=sbs_rel_trial_acc_bin,aes(x=bin_ind,y=rel_actual_acc,group=sub_name),alpha=.2)+
+   scale_x_continuous(name=" Trial # (in block)", labels = c("1-4","5-8","9-12","13-16","17-20","21-24","25-28","29-32"),breaks = c(1:8),limit=c(1,8))+
+   scale_y_continuous(name = "Confidence [z-scored]")+
+   geom_hline(yintercept = 0, color="brown1",linetype="dashed")+
+   
+   # geom_hline(yintercept = 75, color="darkgoldenrod1",linetype="dashed")+
+   # xlim(c(1,8))+
+   # ggtitle("Confidence within block (binned) ")+
+   theme_classic()+
+   theme(axis.title.x = element_text(size = 14,face="bold"),
+         axis.title.y = element_text(size = 14,face="bold"),
+         axis.text.x = element_text(size = 12,angle=15),
+         axis.text.y = element_text(size = 12,angle=0),
+         strip.text = element_text(size = 16,face="bold"),
+         plot.title=element_text(size = 16,face="bold",hjust=.5),
+         legend.position = "none"
+         )
+ 
+)
+
+# ggsave(plot = plot_SM_fig_S14B,filename = file.path(path_export_sm_pics,"SM_fig_S14B_exp3_conf_learning curve.jpg"), width=15, units = "cm")
+```
+
+
+### Pre-reg H3b: Confidence is increased for correct trials as opposed to incorrect trials:
+In line with extensive work demonstrating human’s metacognitive abilities (Fleming & Daw, 2017; Maniscalco & Lau, 2012), we expect normalized confidence ratings to be increased for trials in which the prediction is in line with the underlying rule (i.e. rule accuracy). This will be tested across participants using a paired t-test to compare confidence on trials with correct/incorrect rule accuracy (see figure “Confidence by Rule Accuracy”). 
+
+Figure “Confidence by Rule Accuracy”. Comparing trials by their rule accuracy, we expect that across participants the mean confidence rating will be significantly higher for correct as opposed to incorrect trials. 
+
+```{r prep data for confidence ratings by acc}
+m_conf_by_act_acc<-mean_gz_prereg_exp3%>%
+  dplyr::filter(exp_name%in%c("Exp. 3"))%>%
+  dplyr::group_by(sub_name,is_acc)%>%
+  dplyr::summarise(m_conf=mean(conf_rating),accuracy_type="Actual")
+
+m_conf_by_rule_acc<-mean_gz_prereg_exp3%>%
+  dplyr::filter(exp_name%in%c("Exp. 3"))%>%
+  dplyr::group_by(sub_name,resp_rule_acc)%>%
+  
+  dplyr::summarise(m_conf=mean(conf_rating),accuracy_type="Rule")%>%
+    dplyr::rename(is_acc=resp_rule_acc)
+
+m_conf_by_acc_join<-bind_rows(m_conf_by_act_acc,m_conf_by_rule_acc)
+
+
+```
+
+
+```{r viz confidence ratings by acc, fig.show="hold", out.width="50%"}
+
+
+(plot_SM_fig_confidence_afer_error<-
+  ggpaired(data=m_conf_by_acc_join,
+           x="is_acc",y="m_conf",id="sub_name",fill="is_acc",line.color = "lightgrey",alpha=.1,line.size = .2)+
+    scale_y_continuous(name="Confidence Rating")+
+    scale_x_discrete(name="Current Trial's Accuracy",labels=c("error","correct"))+
+    scale_fill_discrete(name= "Current Trial's Accuracy",labels=c("error","correct"))+
+    theme_classic()+
+    
+    facet_wrap(~accuracy_type)+
+    theme(axis.text.y =element_text(size=14),
+          axis.title.y=element_text(size=16,face="bold"),
+          axis.text.x =element_text(size=14), 
+          axis.title.x=element_text(size=16,face="bold"),
+          # legend.position = "none",
+          strip.background = element_blank(),
+          strip.text = element_text(size = 16,face="bold")
+          
+    )
+)
+
+
+
+
+# summary stats
+m_conf_by_acc_smry_stats<-m_conf_by_acc_join%>%
+  dplyr::group_by(accuracy_type,is_acc)%>%
+  rstatix::get_summary_stats(m_conf,type="mean_ci")%>%
+  dplyr::mutate(lo_ci=mean-ci,hi_ci=mean+ci)
+
+#statistiacl test
+
+m_conf_by_acc_smry_cmpr_stats<-dplyr::full_join(
+  m_conf_by_acc_join%>%
+  dplyr::arrange(accuracy_type,sub_name,is_acc)%>%
+  dplyr::group_by(accuracy_type)%>%
+  rstatix::t_test(m_conf~is_acc,paired = TRUE)%>%
+  dplyr::select(accuracy_type,statistic,df,p),
+  m_conf_by_acc_join%>%
+  dplyr::arrange(accuracy_type,sub_name,is_acc)%>%
+  dplyr::group_by(accuracy_type)%>%
+  rstatix::cohens_d(m_conf~is_acc,paired = TRUE)%>%
+    dplyr::select(accuracy_type,effsize),
+  by="accuracy_type")
+    
+
+knitr::kable(m_conf_by_acc_smry_stats,digits=2,caption = "smry stats  conf by trial acc")
+
+knitr::kable(m_conf_by_acc_smry_cmpr_stats,digits=3,caption = "stats tests conf by trial acc")
+  
+
+```
+
+
+### Pre reg EXP 3: H3c: Explicit confidence & RW trajectory
+
+"H3C: Confidence tracks the latent variable of previous trial’s Prediction Error (derived from R-W Model): In accordance with Hypothesis 3a, which states that confidence ratings will be updated by the previous trial's accuracy, and in line with previous research that has found that confidence ratings track internal learning processes (Meyniel et al., 2015), we expect confidence ratings to be significantly correlated with the previous trial's absolute prediction error.
+To test this for each participant we will correlate the trial’s Confidence Rating and the previous trial’s Prediction Error. We will then run a one-sample t-test on the participants' Pearson correlations’ distribution. We hypothesize that the distribution will be significantly greater than zero and moderate . 
+In addition to the previous trial’s prediction error as an exploratory analysis we will examine confidence rating’s correlation to the probability associated with the choice made (P. Choice) and the strength of the value associated with the choice (v; this is quantified as the distance of v from 0.5), that are also derived from the R-W model. "
+
+
+
+```{r prep data for H3c: correltaion between RW traj & confidence ratings}
+
+corr_PC_conf_ps<-mean_gz_prereg_exp3%>%
+  dplyr::group_by(sub_name)%>%
+  # drop_na(expl.RWS.p_choice,expl.RWS.prev_delta,conf_rating,expl.RWS.dist_v_5)%>%
+  dplyr::summarize(r.conf_PC=rcorr(conf_rating,expl.RWS.p_choice)$r[2],pval.conf_PC=rcorr(conf_rating,expl.RWS.p_choice)$P[2],
+                   r.conf_prev_delta=rcorr(conf_rating,expl.RWS.prev_delta)$r[2],pval.conf_prev_delta=rcorr(conf_rating,expl.RWS.prev_delta)$P[2],
+                    r.conf_dist_v=rcorr(conf_rating,expl.RWS.dist_v_5)$r[2],pval.conf_dist_v=rcorr(conf_rating,expl.RWS.dist_v_5)$P[2]
+  )
+
+
+
+#doing for pval
+p_val_corr_PC_conf_long<-corr_PC_conf_ps%>%
+  select(c(sub_name,starts_with("pval")))%>%
+  pivot_longer(!sub_name,names_to = "vars_compared",names_prefix = "pval.",values_to="val")%>%
+  dplyr::mutate(value_type="p.val")%>%
+  dplyr::mutate(is_sig=if_else(val<.05,1,0))
+
+
+# doing for corr
+corr_val_PC_conf_long<-corr_PC_conf_ps%>%
+  select(c(sub_name,starts_with("r")))%>%
+  pivot_longer(!sub_name,names_to = "vars_compared",names_prefix = "r.",values_to="val")%>%
+  dplyr::mutate(value_type="corr")
+
+
+##all subjects
+sum_p_val_PC_conf=p_val_corr_PC_conf_long%>%
+    drop_na(val)%>%
+  group_by(vars_compared)%>%
+  dplyr::summarise(n_sig=sum(is_sig),total_sub=n())
+
+
+sum_corr_conf_rating_rw_traj<-corr_val_PC_conf_long%>%
+  group_by(vars_compared)%>%
+  drop_na(val)%>%
+  dplyr::summarise(mean_corr=CI(val)[2],hi_CI=CI(val)[1],lo_CI=CI(val)[3],
+                   group_t_statistic=t.test(val)$statistic, group_pval=t.test(val)$p.value,
+                    ES=one_sample_ttest_cohen_d(val)
+                   )%>%
+  full_join(.,sum_p_val_PC_conf,by="vars_compared")
+
+knitr::kable(sum_corr_conf_rating_rw_traj,digits = 3, caption = "correlation Confidence Ratings  and RWS learning metrics")
+
+```
+
+#### Fig. S15
+
+```{r viz correlation of H3c: correltaion between RW traj & confidence ratings}
+#all subjects
+corr_conf_RWS<-corr_val_PC_conf_long%>%
+  dplyr::filter(vars_compared%in%c("conf_PC","conf_prev_delta"))%>%
+  dplyr::filter(value_type=="corr")
+
+grp_corr_conf_RWS<-corr_conf_RWS%>%
+  dplyr::group_by(vars_compared)%>%
+  dplyr::summarize(grp_mean=CI(val)[2],lo_ci=CI(val)[1],hi_ci=CI(val)[3])
+
+
+
+(
+  plot_SM_fig_S15<-
+    ggplot(data=corr_conf_RWS,aes(y=val,x=1))+
+    #         xlim(c(.5,1.5))+
+    # ylim(c(-.1,.3))+
+       geom_boxplot(outlier.shape = NA,linewidth=1,color="black",size=.5,width=.4)+ #,width=.02
+ 
+    geom_point(color="#707070",position = position_jitter(width=.1),size=3, alpha = .8)+
+    
+    # geom_hline(yintercept = 0, color="red",linetype="solid",size=1.5)+
+    geom_hline(yintercept = 0, color="brown1",linetype="dashed",linewidth=1.5)+
+ylab(expression(atop(rho, "value")))+
+
+    theme_classic()+
+    # coord_fixed(ratio = 4,xlim = c(0.8, 1.2))+
+    theme(axis.title.x = element_blank(),
+          axis.title.y = element_text(size = 16,face="bold"),
+          axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          axis.text.y = element_text(size = 14,angle=0),
+          strip.text = element_text(size = 16,face="bold"),
+          strip.background = element_blank(),
+          legend.position = "none"
+    )+
+    facet_wrap(~vars_compared)
+  
+)
+
+# ggsave(plot = plot_SM_fig_S15,filename = file.path(path_export_sm_pics,"SM_fig_S15_exp3_corr_conf_RWS_traj.jpg"), width=15, units = "cm")
+```
+
+
+### Exp 3: Pre_reg Hypothesis 4
+####4A Gaze is associated with explicot prediction
+Hypothesis 4a: Gaze direction is strongly associated with the direction of the explicit prediction: To examine how explicit responses and implicit ocular expectations are related, we will take the normalized gaze direction of the first 300 msec in the environment (see Figure “Association Between Explicit Predictions and Gaze” left panel) and average it per trial and per Prediction (right/ left). We then compare the effect of explicit Prediction on Normalized Gaze across participants using a paired t-test (see Figure “Association Between Explicit Predictions and Gaze”   right panel).  We expect a significant effect of Prediction on Normalized Gaze.
+
+``` {r prep data for H4A experiment 3}
+#summarizing per trial (pt) and then summing across trials (may be more robust to outliers)
+
+
+exp3_mean_gz_by_pred<-mean_gz_prereg_exp3%>%
+  dplyr::group_by(exp_name,sub_name,QuestionResult)%>%
+  dplyr::summarize(lo_ci=CI(m_gz)[3],hi_ci=CI(m_gz)[1],mean_gz=CI(m_gz)[2])
+
+```
+
+#### Fig. S16A
+```{r viz gaze follows prediction  ggpaired experiment 3}
+## plotting ggpaired
+
+(
+  plot_SM_fig_S16A_ggpaired_gz_by_pred<-
+    ggpaired(data =exp3_mean_gz_by_pred,
+             x="QuestionResult", y="mean_gz", id="sub_name", fill="QuestionResult" , line.color = "lightgrey",line.size = .2)+
+    scale_x_discrete(name= "Prediction",labels=c("L","R"))+
+    # scale_x_discrete(name= "",labels=c("L","R"))+
+
+    ylab("Gaze Direction")+
+    scale_fill_manual(values=c("plum4","seagreen4"),labels=c("left","right"),name= "Prediction")+
+    # ggtitle("Gaze by Prediction (per trial)",
+    #         subtitle=sprintf("p: %.3f Cohen's d: %.3f", t.test(data=mean_gz_by_pred, mean_gz~QuestionResult, paired=TRUE)$p.val, 
+    #                          cohens_d(data=mean_gz_by_pred%>%ungroup(), mean_gz~QuestionResult, paired=TRUE)$effsize))+
+    # ylim(c(-.95,.9))+
+    theme_classic()+
+    theme(axis.title.y = element_text(size = 16,face="bold"),
+          axis.title.x = element_text(size = 16,face="bold"),
+          axis.text.x = element_text(size = 14,angle=0),
+          axis.text.y = element_text(size = 14,angle=0),
+            # legend.position = "right",
+          legend.position = "none",
+          )
+)
+
+#Summary stats seperately
+exp3_smry_stats_mean_gz_by_pred<-exp3_mean_gz_by_pred%>%
+  dplyr::group_by(sub_name)%>%
+  dplyr::mutate(diff_gz=mean_gz-first(mean_gz))%>%
+  dplyr::filter(diff_gz!=0)%>%
+  dplyr::ungroup()%>%
+  dplyr::summarise(mean_diff=CI(diff_gz)[2],lo_ci=CI(diff_gz)[3],hi_ci=CI(diff_gz)[1],
+                   t=t.test(diff_gz)$statistic,df=t.test(diff_gz)$parameter, p.val=t.test(diff_gz)$p.value
+                   , ES=one_sample_ttest_cohen_d(diff_gz))
+
+
+
+
+
+knitr::kable(exp3_smry_stats_mean_gz_by_pred,
+             digits=2,caption = "Diff gaze direction by prediction Exp 3 (pre-reg)")
+
+
+
+
+# ggsave(plot = plot_SM_fig_S16A_ggpaired_gz_by_pred,filename = file.path(path_export_sm_pics,"SM_fig_S16A_exp3_ggpaired_gz_by_pred.jpg"), width=15, units = "cm")
+
+
+
+```
+
+#### Fig. S16B
+```{r Exp 3 gaze by prediction indov subjects}
+
+
+#fix up subjects name
+exp3_mean_gz_by_pred<-exp3_mean_gz_by_pred%>%
+  dplyr::mutate(new_sub_name=sprintf("Sub %.2d",parse_number(sub_name)))
+
+( plot_SM_fig_S16B_gz_diff_indiv<-
+    ggplot(data=exp3_mean_gz_by_pred,aes(x=mean_gz,y=new_sub_name,color=as.factor(QuestionResult)))+ #y=fct_reorder(sub_name, desc(sub_num)
+    geom_pointrange(aes(xmin=lo_ci,xmax=hi_ci),position=position_dodge(width = .3))+
+    geom_vline(xintercept = 0,color="brown1",linetype="dashed")+
+    scale_color_manual(name="Prediction",values=c("plum4","seagreen4"),labels=c("left","right"))+
+    # facet_col(~exp_name,scales = "free_y")+
+    ylab("Subject")+
+    xlab("Gaze Direction")+
+    theme_classic()+
+    theme(axis.title.x = element_text(size = 16,face="bold"),
+          axis.title.y = element_text(size = 16,face="bold"),
+          axis.text.x = element_text(size = 14,angle=0),
+          axis.text.y = element_text(size = 8,angle=0),
+          )
+  # ggtitle("Gaze by Prediction ")
+  
+  
+)
+
+exp3_gz_by_pred_stats<-mean_gz_prereg_exp3%>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  dplyr::summarise(p=t.test(m_gz~QuestionResult)$p.value,
+                   is_sig=if_else(p<.05,1,0))
+
+gz_by_pred_stats_per_exp<-exp3_gz_by_pred_stats%>%
+  dplyr::summarise(n_sig=sum(is_sig), total_n=n())
+
+kable(gz_by_pred_stats_per_exp,caption = "Gaze by Prediction, single ss signfiacne")
+# ggsave(plot = plot_SM_fig_S16B_gz_diff_indiv,filename = file.path(path_export_sm_pics,"SM_fig_S16B_exp3_gz_by_pred_indiv_ss.jpg"), width=15, units = "cm")
+```
+
+### H4: A gaze Prediction is correlated to P. Choice
+```{r exp 3 prep data for correlation of gaze prediction and sRW traj}
+
+# getting correlation of gaze & RW trajectory (this is done on trial by-trial basis ) per subject
+exp3_corr_gz_rws_traj_ps<-mean_gz_prereg_exp3%>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  dplyr::summarize(
+    # corr pred_gz& previous trial's PE
+    r.da_pred_gz=rcorr(expl.RWS.prev_delta,m_pred_gz)$r[2],pval.da_pred_gz=rcorr(expl.RWS.prev_delta,m_pred_gz)$P[2], 
+    
+    #  gaze2prediction & dist of v from 0.5
+    r.distv5_pred_gz=rcorr(expl.RWS.dist_v_5,m_pred_gz)$r[2],pval.distv5_pred_gz=rcorr(expl.RWS.dist_v_5,m_pred_gz)$P[2], # corr pred_gz 
+    
+    #  gaze2prediction & P Choice
+    r.PC_pred_gz=rcorr(expl.RWS.p_choice,m_pred_gz)$r[2],pval.PC_pred_gz=rcorr(expl.RWS.p_choice,m_pred_gz)$P[2] 
+  )
+
+#pivoting to long (this is done very rudimentary)
+
+#doing for pval
+exp3_p_val_long_rws<-exp3_corr_gz_rws_traj_ps%>%
+  select(c(exp_name,sub_name,starts_with("pval")))%>%
+  pivot_longer(!c(exp_name,sub_name),names_to = "vars_compared",names_prefix = "pval.",values_to="val")%>%
+  dplyr::mutate(value_type="p.val")%>%
+  dplyr::mutate(is_sig=if_else(val<.05,1,0))
+
+
+# doing for corr
+exp3_corr_val_long_rws<-exp3_corr_gz_rws_traj_ps%>%
+  select(c(exp_name,sub_name,starts_with("r")))%>%
+  pivot_longer(!c(exp_name,sub_name),names_to = "vars_compared",names_prefix = "r.",values_to="val")%>%
+  dplyr::mutate(value_type="corr")
+
+# getting numbeer of sig subjects
+exp3_sum_p_val_rws=exp3_p_val_long_rws%>%
+  group_by(exp_name,vars_compared)%>%
+  dplyr::summarise(n_sig=sum(is_sig,na.rm = TRUE),total_sub=n())
+
+#joining
+exp3_sum_corr_gz_rws_traj<-exp3_corr_val_long_rws%>%
+  group_by(exp_name,vars_compared)%>%
+  dplyr::summarise(mean_corr=CI(val)[2],lo_corr=CI(val)[1],hi_corr=CI(val)[3],
+                   group_t_statistic=t.test(val)$statistic, group_pval=t.test(val)$p.value,
+                   ES=one_sample_ttest_cohen_d(val))%>%
+  full_join(.,sum_p_val_rws,by=c("exp_name","vars_compared"))
+
+knitr::kable(exp3_sum_corr_gz_rws_traj%>%dplyr::filter(exp_name=="Exp. 3"),digits = 3, caption = "EXP 3correlation EM and learning metric RW (PreReg sub)")
+```
+#### Fig. S17
+
+```{r EXP3 visualize distribution of correlation value, fig.show="hold", out.width="50%"}
+#all subjects
+exp3_corr_pc_gz2pred_rws<-exp3_corr_val_long_rws%>%
+  dplyr::filter(vars_compared=="PC_pred_gz")%>%
+  dplyr::filter(value_type=="corr")
+
+exp3_grp_corr_pc_gz2pred_rws<-exp3_corr_pc_gz2pred_rws%>%
+  dplyr::group_by(exp_name)%>%
+  dplyr::summarize(grp_mean=CI(val)[2],lo_ci=CI(val)[1],hi_ci=CI(val)[3])
+
+(
+  SM_plot_corr_gz_pred_pchoice<-
+    ggplot(data=exp3_corr_pc_gz2pred_rws,aes(y=val,x=1))+
+    # geom_violin(alpha=.4,scale="width")+
+        xlim(c(.5,1.5))+
+
+    geom_boxplot(outlier.shape = NA,linewidth=1,color="black",size=.5,width=.4)+ #,width=.02
+    # geom_pointrange (data=grp_corr_pc_gz2pred_rws%>%dplyr::filter(exp_name!="Exp. 3"), aes(y=grp_mean,ymin=lo_ci, ymax=hi_ci),size=3,fatten=1.5,width=.1, color="black")+
+    
+
+    geom_point(color="#707070",position = position_jitter(width=.1),size=3, alpha = .8)+
+    
+    # geom_hline(yintercept = 0, color="red",linetype="solid",size=1.5)+
+    geom_hline(yintercept = 0, color="brown1",linetype="dashed",linewidth=1.5)+
+ylab(expression(atop(rho, "\n Gaze & P. Choice")))+
+    # ylab(paste(" \u03C1","Gaze & P. Choice"))+
+    # ylim(c(-.3,.5))+
+    
+    theme_classic()+
+    # coord_fixed(ratio = 4,xlim = c(0.8, 1.2))+
+    theme(axis.title.x = element_blank(),
+          axis.title.y = element_text(size = 16,face="bold"),
+          axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          axis.text.y = element_text(size = 14,angle=0),
+          strip.text = element_text(size = 16,face="bold"),
+          strip.background = element_blank(),
+          legend.position = "none"
+    )+
+    facet_wrap(~exp_name)
+)
+
+# ggsave(plot = SM_plot_corr_gz_pred_pchoice,filename = file.path(path_export_sm_pics,"SM_fig_S17_exp3_corr_gz_pred_pchoice.jpg"), width=15, units = "cm")
+```
+
+### H4:B Gaze fulfills benchmarks of confidence
+"Hypothesis 4b: ”Gaze exhibits the three statistical hallmarks of confidence”: In brief (see https://osf.io/t49pj for full explanation), we will examine whether gaze reflects confidence and fulfills the three statistical hallmarks of confidence (Sanders et al., 2016)"
+
+```{r Exp 3. prep data for benchmark 1 check if accuarcy increases with gaze2prediction}
+
+#add percentile 
+mean_gz_prereg_exp3<-mean_gz_prereg_exp3%>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  dplyr::mutate(tile_gz2pred=ntile(m_pred_gz,n_ptiles_gz2pred))%>%
+  dplyr::relocate(tile_gz2pred,.after = m_pred_gz)
+
+#get subject by subject
+exp3_sbs_acc_per_tile_gz2pred<-mean_gz_prereg_exp3%>%
+  dplyr::group_by(exp_name,sub_name,tile_gz2pred)%>%
+  dplyr::summarize(m_actual_acc=mean(is_acc)*100,m_rule_acc=mean(resp_rule_acc)*100,m_gz2pred=mean(m_pred_gz),count=n())
+
+
+#group- all subjects
+exp3_grp_acc_per_tile_gz2pred<-exp3_sbs_acc_per_tile_gz2pred%>%
+  dplyr::group_by(exp_name,tile_gz2pred)%>%
+  dplyr::summarize(lo_ci_act_acc=CI(m_actual_acc)[1],hi_ci_act_acc=CI(m_actual_acc)[3],m_actual_acc=CI(m_actual_acc)[2],
+                   lo_ci_rule_acc=CI(m_rule_acc)[1],hi_ci_rule_acc=CI(m_rule_acc)[3],m_rule_acc=CI(m_rule_acc)[2])
+
+
+```
+
+```{r Exp. 3run prereg stats for benchmark 1}
+
+# getting correlation of gaze & RW trajectory (this is done on trial by-trial basis ) per subject
+exp3_sbs_corr_bench1_acc_gz_pred<-exp3_sbs_acc_per_tile_gz2pred%>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  dplyr::summarize(
+    # corr rule acc & gz prediction
+    r.acc_gz_pred=rcorr(m_rule_acc,m_gz2pred,type = "spearman")$r[2],pval.acc_gz_pred=rcorr(m_rule_acc,m_gz2pred,type = "spearman")$P[2]
+  )%>%
+  dplyr::mutate(is_sig=if_else(pval.acc_gz_pred<.05,1,0))
+
+
+
+#joining
+exp3_sum_stats_corr_bench1_acc_gz_pred <-exp3_sbs_corr_bench1_acc_gz_pred%>%
+  group_by(exp_name)%>%
+  dplyr::summarise(mean_corr=CI(r.acc_gz_pred)[2],lo_corr=CI(r.acc_gz_pred)[1],hi_corr=CI(r.acc_gz_pred)[3],
+                   group_t_statistic=t.test(r.acc_gz_pred)$statistic, group_pval=t.test(r.acc_gz_pred)$p.value,
+                   ES=one_sample_ttest_cohen_d(r.acc_gz_pred))
+
+knitr::kable(exp3_sum_stats_corr_bench1_acc_gz_pred,digits=4, caption = "Exp 3 Conf benchmark 1 distribution of spearman correlation")
+```
+
+So this is almost sig. but not a very good way to test it...
+```{r Exp3 test confidence benchmark 1 with glmer}
+## RE: geberal intercept
+rule_acc_by_gz_pred_frmla<-resp_rule_acc~m_pred_gz+(1|sub_name)
+
+rule_acc_by_gz_pred.res_exp3=glmer(rule_acc_by_gz_pred_frmla,data=mean_gz_prereg_exp3,
+                                   family = binomial)%>%
+  broom.mixed::tidy()%>%
+  mutate(exp_name="Exp. 3")
+
+
+knitr::kable(rule_acc_by_gz_pred.res_exp1, digits = 5, caption="Conf benchmark 1 with glmer")
+```
+
+#### Fig S18A
+Vizulaize benchmark 1
+```{r Exp 3 visualize benchmark 1 check if accuarcy increases with gaze2prediction}
+# plot rule acc  
+##Exp. 3
+(plot_SM_fig_S18A<-
+   ggplot(data=exp3_grp_acc_per_tile_gz2pred,aes(x=tile_gz2pred, y= m_rule_acc))+
+   geom_pointrange(aes(ymin=lo_ci_rule_acc,ymax=hi_ci_rule_acc),color="black",linewidth=1.5)+
+    geom_line(alpha=.8,linewidth=2,color="black")+
+   geom_point(size=3)+
+   # geom_ribbon(aes(ymin=lo_ci_rule_acc,ymax=hi_ci_rule_acc),fill="sandybrown", alpha=.2,  color=NA)+
+   
+   scale_x_continuous(name= ("Gaze Prediction"))+
+   scale_y_continuous(name=("% Correct"),limits = c(62,86))+
+   
+   theme_classic()+
+   theme(axis.title.x = element_text(size = 16,face="bold"),
+         axis.title.y = element_text(size = 16,face="bold"),
+         axis.text.x = element_text(size = 14,angle=0),
+         axis.text.y = element_text(size = 14,angle=0),
+         legend.position = "none"
+   )
+)
+
+
+# ggsave(plot = plot_SM_fig_S18A,filename = file.path(path_export_sm_pics,"SM_fig_S18A_exp3_Benchmark1.jpg"), width=12, units = "cm")
+
+
+```
+
+### Fig S18B
+Benchmark 2: folded X
+
+#### Running with RWS
+
+```{r EXP3 prep data to look at benchmark 2 of confidence using distV as proxy of evidence RWS}
+n_ptiles_dist_v<-6
+
+exp3_gz_by_distV_RWS_acc_df<-mean_gz_prereg_exp3%>%
+  dplyr::group_by(exp_name,sub_name,resp_rule_acc)%>%
+  dplyr::mutate(dist_v_rule_acc_bin=ntile(expl.RWS.dist_v_5,n_ptiles_dist_v))%>% #binning according to RULE ACC
+  dplyr::relocate(dist_v_rule_acc_bin,.after="expl.RW.dist_v_5") %>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  dplyr::mutate(dist_v_bin=ntile(expl.RWS.dist_v_5,n_ptiles_dist_v))%>% #binning only according to V
+  dplyr::relocate(dist_v_bin,.after="dist_v_rule_acc_bin") 
+
+
+```
+
+
+```{r EXP3run prereg stats for Benchmark 2 using lme4 RWS }
+#Exp 3
+bench2_full_frmla<-m_pred_gz~resp_rule_acc+dist_v_bin+resp_rule_acc:dist_v_bin+(1|sub_name)
+
+bench2_full_exp3.res_rws=lmer(bench2_full_frmla,data=exp3_gz_by_distV_RWS_acc_df,REML = FALSE)
+
+# remove interaction term
+bench2_null_frmla<-m_pred_gz~resp_rule_acc+dist_v_rule_acc_bin+(1|sub_name)
+# bench2_null_frmla<-m_pred_gz~resp_rule_acc+dist_v_bin+(1|sub_name)
+
+# bench2_null_frmla<-m_pred_gz~resp_rule_acc+expl.dist_v_5+(1|sub_name)
+
+bench2_null_exp3.res_rws=lmer(bench2_null_frmla,data=exp3_gz_by_distV_RWS_acc_df,REML = FALSE)
+
+
+#test with anova
+bench2_aov_exp3_res_rws<-anova(bench2_full_exp3.res_rws,bench2_null_exp3.res_rws)%>%tidy()%>%mutate(exp = "Exp. 3")%>%dplyr::filter(!is.na(df))
+
+knitr::kable(bench2_aov_exp3_res_rws, digits= 4, caption= "EXP 3. RWS lme results Benchmark 2")
+```
+
+```{r Exp 3 getting summary stats for visualization bin by v  and acc RWS}
+min_trials_per_bin<-5
+
+# summarizing across subjects
+exp3_gz_by_distV_acc_grp_rws<-exp3_gz_by_distV_RWS_acc_df%>%
+  dplyr::group_by(exp_name,sub_name,dist_v_rule_acc_bin,resp_rule_acc)%>%
+  dplyr::summarise(m_gz2pred=mean(m_pred_gz),count=n())%>%
+  dplyr::mutate(acc_type="rule")%>%
+  dplyr::rename(acc=resp_rule_acc)%>%
+  dplyr::filter(count>=min_trials_per_bin)%>%
+  dplyr::group_by(exp_name,dist_v_rule_acc_bin,acc)%>%
+  dplyr::summarise(lo_ci=CI(m_gz2pred)[1],hi_ci=CI(m_gz2pred)[3],m_gz2pred=CI(m_gz2pred)[2],n_sub=n())
+
+```
+
+
+```{r EXP3 visualize benchmark 2 for Acc as functioon of gaze confidence & v binn using v and acc RWS, fig.show="hold", out.width="50%" }
+#visualize dist_v_rule acc
+(
+  plot_SM_fig_gz_pred_bench2<-
+    ggplot(data=exp3_gz_by_distV_acc_grp_rws,
+           aes(x=(dist_v_rule_acc_bin),y=m_gz2pred,color=as.factor(acc),fill=as.factor(acc), group=as.factor(acc)))+
+    geom_line(aes(color=as.factor(acc)),alpha=.4,linewidth=2)+
+    geom_pointrange(aes(ymin=lo_ci,ymax=hi_ci,group=as.factor(dist_v_rule_acc_bin)),position = position_dodge2(width=.1),linewidth=1.5)+
+    scale_x_continuous(name=" Expectation Strength")+
+    scale_y_continuous(name = "Gaze Prediction")+
+    scale_color_manual(name="ACC",values=color_vec_benchmark2_acc,labels=c("error","correct"))+
+    scale_fill_manual(name="ACC",values=color_vec_benchmark2_acc,labels=c("error","correct"))+
+    theme_classic()+
+    theme(plot.title = element_text(size = 20,face="bold",hjust = 0.5),
+          axis.title.x = element_text(size = 16,face="bold"),
+          axis.title.y = element_text(size = 16,face="bold"),
+          axis.text.x = element_text(size = 14,angle=0),
+          axis.text.y = element_text(size = 14,angle=0),
+          # legend.position = "none"
+    )
+)
+
+
+# ggsave(plot = plot_SM_fig_gz_pred_bench2,filename = file.path(path_export_sm_pics,"SM_fig_S19_exp3_Benchmark2.jpg"), width=12, units = "cm")
+
+```
+
+#### Fig S18C
+Confidence Benchmark 3: EXP3
+```{r benchmark 3: prep data to look at  of confidence using distV RWS as proxy of evidence EXP3}
+# binning prediction gz streng
+exp3_acc_by_gz_distV_RWS_sbs<-mean_gz_prereg_exp3%>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  dplyr::mutate(dist_v_bin=ntile(expl.RWS.dist_v_5,6))%>% #binning  distance of V
+  dplyr::mutate(pred_gz_bin=ntile(m_pred_gz,2))%>% #binning high & low gaze2pred
+  dplyr::relocate(dist_v_bin,.after="expl.RWS.dist_v_5")%>%
+  dplyr::relocate(pred_gz_bin,.after="m_pred_gz")%>%
+  drop_na(dist_v_bin)%>%
+  dplyr::group_by(exp_name,sub_name,dist_v_bin,pred_gz_bin)%>%
+  dplyr::summarize(acc=mean(resp_rule_acc),count=n()) 
+
+# summarizing across subject
+exp3_acc_by_gz_distV_RWS_grp<-exp3_acc_by_gz_distV_RWS_sbs%>%
+  dplyr::group_by(exp_name,dist_v_bin,pred_gz_bin)%>%
+  dplyr::summarise(lo_ci=CI(acc)[1]*100,hi_ci=CI(acc)[3]*100,m_acc=CI(acc)[2]*100)
+
+
+
+```
+
+
+```{r EXP 3 visualize benchmark 3 for gaze as confidence using V RWS as proxy of evidence, fig.show="hold", out.width="50%" }
+
+#define colors for high/low gaze prediction
+cvec_pred_strength<-c("black","azure3")
+
+
+#Experiment 3
+( plot_SM_fig_gz_pred_bench3<-
+    ggplot(exp3_acc_by_gz_distV_RWS_grp,
+           aes(x=(dist_v_bin),y=m_acc,color=as.factor(pred_gz_bin),fill=as.factor(pred_gz_bin), group=(dist_v_bin)))+
+    geom_pointrange(aes(ymin=lo_ci,ymax=hi_ci,group=as.factor(dist_v_bin)),position = position_dodge2(width=.1),linewidth=1.5)+
+    geom_line(aes(color=as.factor(pred_gz_bin),group=as.factor(pred_gz_bin)),alpha=.8,linewidth=2)+
+    
+    scale_x_continuous(name="Expectation Strength")+
+    scale_y_continuous(name = "% Correct")+
+    scale_color_manual(name="Gaze Prediction", labels=c("low","high"), values=cvec_pred_strength)+
+    scale_fill_manual(name="Gaze Prediction", labels=c("low","high"), values=c("black","azure2"))+
+    theme_classic()+
+    theme(axis.title.x = element_text(size = 12,face="bold"),
+          axis.title.y = element_text(size = 12,face="bold"),
+          axis.text.x = element_text(size = 10,angle=0),
+          axis.text.y = element_text(size = 10,angle=0),
+          legend.position = "none"
+         )
+    )
+
+
+
+
+# ggsave(plot = plot_SM_fig_gz_pred_bench3,filename = file.path(path_export_sm_pics,"SM_fig_S19_exp3_Benchmark3.jpg"), width=12, units = "cm")
+```
+
+```{r EXP3 prep data to run prereg stats for Benchmark 3 using lme4  bin only by v5 RWS}
+exp3_acc_w_gz_distV_RWS_sbs_4stats<-mean_gz_prereg_exp3%>%
+  dplyr::group_by(exp_name,sub_name)%>%
+  dplyr::mutate(dist_v_bin=ntile(expl.RWS.dist_v_5,6))%>% #binning  distance of V
+  dplyr::mutate(pred_gz_bin=ntile(m_pred_gz,2))%>% #binning high & low gaze2pred
+  dplyr::relocate(dist_v_bin,.after="expl.RWS.dist_v_5")%>%
+  dplyr::relocate(pred_gz_bin,.after="m_pred_gz")%>%
+  dplyr::select("exp_name","sub_name","TrialNumber","resp_rule_acc", "pred_gz_bin","dist_v_bin")
+
+
+```
+
+```{r EXP 3 run prereg stats for Benchmark 3 using lme4  bin only by v5 RW glmer}
+bench3_full_frmla<-resp_rule_acc~pred_gz_bin+dist_v_bin+pred_gz_bin:dist_v_bin+(1|sub_name)
+
+#Exp 1
+bench3_full_exp1.res_rws=glmer(bench3_full_frmla,                        
+                               data=exp3_acc_w_gz_distV_RWS_sbs_4stats%>%ungroup(),
+                               family = binomial)%>%
+  broom.mixed::tidy()%>%
+  mutate(exp_name="Exp. 1")
+
+
+
+
+knitr::kable(bench3_full_exp1.res_rws%>%dplyr::filter(effect=="fixed"),caption = "Exp 3Benchmark 3 RWS (glmer)")
+```
+
+
+
+## Fig. S19
+Parameter  recovery
+
+```{r prep_data for parameter recovery}
+# pivoting to long
+param_recov_long<-pivot_longer(param_recov_csv%>%dplyr::mutate(iter=row_number()),cols=!iter,names_to = c("param_status","model","param_name"),names_sep = "_",values_to = "val")
+
+```
+
+```{r viz param recovery}
+
+#Visuzlaining
+(plot_SM_parm_recovery_rw<-
+  ggplot(data=param_recov_long%>%dplyr::filter(model=="RW")%>%
+           
+           pivot_wider(id_cols=c(iter,model,param_name),names_from = param_status,values_from = val),
+         aes(x=sim,y=rec))+
+    xlab("Simulated Value")+
+    ylab("Recovered Value")+
+    geom_point(alpha=.7)+
+    geom_smooth(method = "lm", se = TRUE, color = "lightblue")+
+    facet_wrap(~param_name,scales = "free",labeller =  label_parsed)+
+    theme_classic()+
+    theme(axis.title.x = element_text(size = 14,face="bold"),
+          axis.title.y = element_text(size = 14,face="bold"),
+          axis.text.x = element_text(size = 14,angle=0),
+          axis.text.y = element_text(size = 10,angle=0),
+          strip.text = element_text(size = 14,face="bold"),
+          strip.background = element_blank()
+
+    )
+  
+)
+
+
+(plot_SM_parm_recovery_rws<-
+  ggplot(data=param_recov_long%>%dplyr::filter(model=="RWS")%>%
+           
+           pivot_wider(id_cols=c(iter,model,param_name),names_from = param_status,values_from = val),
+         aes(x=sim,y=rec))+
+    xlab("Simulated Value")+
+    ylab("Recovered Value")+
+    geom_point(alpha=.7)+
+    geom_smooth(method = "lm", se = TRUE, color = "lightblue")+
+    facet_wrap(~param_name,scales = "free",labeller =  label_parsed)+
+    theme_classic()+
+    theme(axis.title.x = element_text(size = 14,face="bold"),
+          axis.title.y = element_text(size = 14,face="bold"),
+          axis.text.x = element_text(size = 14,angle=0),
+          axis.text.y = element_text(size = 10,angle=0),
+          strip.text = element_text(size = 14,face="bold"),
+          strip.background = element_blank()
+
+    )
+  
+)
+
+
+(plot_SM_parm_recovery_wsls<-
+  ggplot(data=param_recov_long%>%dplyr::filter(model=="WSLS")%>%
+           
+           pivot_wider(id_cols=c(iter,model,param_name),names_from = param_status,values_from = val),
+         aes(x=sim,y=rec))+
+    xlab("Simulated Value")+
+    ylab("Recovered Value")+
+    geom_point(alpha=.7)+
+    geom_smooth(method = "lm", se = TRUE, color = "lightblue")+
+    facet_wrap(~param_name,scales = "free",labeller =  label_parsed)+
+    theme_classic()+
+    theme(axis.title.x = element_text(size = 14,face="bold"),
+          axis.title.y = element_text(size = 14,face="bold"),
+          axis.text.x = element_text(size = 14,angle=0),
+          axis.text.y = element_text(size = 10,angle=0),
+          strip.text = element_text(size = 14,face="bold"),
+          strip.background = element_blank()
+
+    )
+  
+)
+
+# ggsave(plot = plot_SM_parm_recovery_rw,filename = file.path(path_export_sm_pics,"SM_fig_S20_plot_SM_parm_recovery_rw.jpg"), height=10, units = "cm")
+# 
+# ggsave(plot = plot_SM_parm_recovery_rws,filename = file.path(path_export_sm_pics,"SM_fig_S20_plot_SM_parm_recovery_rws.jpg"), height=10, units = "cm")
+# 
+# ggsave(plot = plot_SM_parm_recovery_wsls,filename = file.path(path_export_sm_pics,"SM_fig_S20_plot_SM_parm_recovery_wsls.jpg"), height=10, units = "cm")
+
+
+```
+
+```{r print out correlation values of parameter recovery}
+param_corr_val_rw<-param_recov_long%>%dplyr::filter(model=="RW")%>%
+           pivot_wider(id_cols=c(iter,model,param_name),names_from = param_status,values_from = val)%>%
+  dplyr::group_by(param_name)%>%
+  cor_test(sim,rec)%>%
+  dplyr::mutate(model="RW")
+
+param_corr_val_rws<-param_recov_long%>%dplyr::filter(model=="RWS")%>%
+           pivot_wider(id_cols=c(iter,model,param_name),names_from = param_status,values_from = val)%>%
+  dplyr::group_by(param_name)%>%
+  cor_test(sim,rec)%>%
+  dplyr::mutate(model="RWS")
+
+param_corr_val_wsls<-param_recov_long%>%dplyr::filter(model=="WSLS")%>%
+           pivot_wider(id_cols=c(iter,model,param_name),names_from = param_status,values_from = val)%>%
+  dplyr::group_by(param_name)%>%
+  cor_test(sim,rec)%>%
+  dplyr::mutate(model="WSLS")
+
+
+param_rec_corr_vals<-bind_rows(param_corr_val_rw,param_corr_val_rws)%>%
+  bind_rows(.,param_corr_val_wsls)
+
+knitr::kable(param_rec_corr_vals,digits=2,caption="paramater recovery correlation values")
+
+```
+
