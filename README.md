@@ -1,11 +1,12 @@
 # Gaze_and_prediction_for_pub
- Repository for ‘Eye Know’: Gaze reflects confidence in explicit predictions while relying on a distinct computational mechanism  paper
 
-Read Me for Data & Analysis Scripts 
-‘Eye Know’: Gaze reflects confidence in explicit predictions while relying on a distinct computational mechanism  
+Repository for  "*‘Eye Know’*: Gaze reflects confidence in explicit predictions while relying on a distinct computational mechanism"  
 
 Yonatan Stern, Ophir Netzer, Danny Koren, Yair Zvilichovsky, Uri Hertz, Roy Salomon
 
+Read Me for Data & Analysis Scripts 
+
+ 
 **Data**
 
 All data csvs needed for scripts can be downloaded from OSF. 
