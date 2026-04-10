@@ -1333,7 +1333,7 @@ ylab(expression(atop(rho, "\n Gaze & P. Choice")))+
 Examining confidence benchmarks
 
 ### Panel A: Benchamrk 1  montonic rise in acc
-```{r prep data for benchmark 1 check if accuarcy increases with gaze2prediction}
+```{r prep data for benchmark 1 check if accuarcy increases with gaze2prediction RWS}
 
 #add percentile 
 mean_gz_prereg_csv<-mean_gz_prereg_csv%>%
@@ -1741,7 +1741,7 @@ bench3_full_exp2.res_rws=glmer(bench3_full_frmla,
 knitr::kable(bind_rows(bench3_full_exp1.res_rws,bench3_full_exp2.res_rws)%>%dplyr::filter(effect=="fixed"),caption = "Benchmark 3 RWS (glmer)")
 ```
 
-```{r pairwise comparison of Bench 3 RWS}
+```{r pairwise comparison of Bench 3 RWS v1}
 sbs_bench3_RWS<-acc_w_gz_distV_RWS_sbs_4stats%>%
   dplyr::filter(exp_name%in%c("Exp. 1","Exp. 2"))%>%
   dplyr::group_by(exp_name,sub_name,pred_gz_bin,dist_v_bin)%>%
@@ -1764,355 +1764,355 @@ pwc_bench_3_RWS <- sbs_bench3_RWS %>%
 
 ### Additional anaylses on Folded X pattern
 
-## Figure 3
+<!-- ## Figure 3 -->
 
-Examining confidence benchmarks
+<!-- Examining confidence benchmarks -->
 
-### Panel A: Benchamrk 1  montonic rise in acc
-```{r prep data for benchmark 1 check if accuarcy increases with gaze2prediction}
-
-#add percentile 
-mean_gz_prereg_csv<-mean_gz_prereg_csv%>%
-  dplyr::group_by(exp_name,sub_name)%>%
-  dplyr::mutate(tile_gz2pred=ntile(m_pred_gz,n_ptiles_gz2pred))%>%
-  dplyr::relocate(tile_gz2pred,.after = m_pred_gz)
-
-#get subject by subject
-sbs_acc_per_tile_gz2pred<-mean_gz_prereg_csv%>%
-  dplyr::group_by(exp_name,sub_name,tile_gz2pred)%>%
-  dplyr::summarize(m_actual_acc=mean(is_acc)*100,m_rule_acc=mean(resp_rule_acc)*100,m_gz2pred=mean(m_pred_gz),count=n())
-
-
-#group- all subjects
-grp_acc_per_tile_gz2pred<-sbs_acc_per_tile_gz2pred%>%
-  dplyr::group_by(exp_name,tile_gz2pred)%>%
-  dplyr::summarize(lo_ci_act_acc=CI(m_actual_acc)[1],hi_ci_act_acc=CI(m_actual_acc)[3],m_actual_acc=CI(m_actual_acc)[2],
-                   lo_ci_rule_acc=CI(m_rule_acc)[1],hi_ci_rule_acc=CI(m_rule_acc)[3],m_rule_acc=CI(m_rule_acc)[2])
-
-
-```
-
-```{r run prereg stats for benchmark 1}
-
-# getting correlation of gaze & ACC (this is done on trial by-trial basis ) per subject
-sbs_corr_bench1_acc_gz_pred<-sbs_acc_per_tile_gz2pred%>%
-  dplyr::group_by(exp_name,sub_name)%>%
-  dplyr::summarize(
-    # corr rule acc & gz prediction
-    r.acc_gz_pred=rcorr(m_rule_acc,m_gz2pred,type = "spearman")$r[2],pval.acc_gz_pred=rcorr(m_rule_acc,m_gz2pred,type = "spearman")$P[2]
-  )%>%
-  dplyr::mutate(is_sig=if_else(pval.acc_gz_pred<.05,1,0))
-
-
-
-#joining
-sum_stats_corr_bench1_acc_gz_pred <-sbs_corr_bench1_acc_gz_pred%>%
-  group_by(exp_name)%>%
-  dplyr::summarise(mean_corr=CI(r.acc_gz_pred)[2],lo_corr=CI(r.acc_gz_pred)[1],hi_corr=CI(r.acc_gz_pred)[3],
-                   group_t_statistic=t.test(r.acc_gz_pred)$statistic, group_pval=t.test(r.acc_gz_pred)$p.value,
-                   ES=one_sample_ttest_cohen_d(r.acc_gz_pred))
-
-knitr::kable(sum_stats_corr_bench1_acc_gz_pred,digits=4, caption = "Conf benchmark 1 distribution of spearman correlation")
-```
-
-So these results aren't super strong. But this is actually a pretty poor way of testing this hypothesis. 
+<!-- ### Panel A: Benchamrk 1  montonic rise in acc -->
+<!-- ```{r prep data for benchmark 1 check if accuarcy increases with gaze2prediction} -->
 
-Let's try now using a logistic regression approach
+<!-- #add percentile  -->
+<!-- mean_gz_prereg_csv<-mean_gz_prereg_csv%>% -->
+<!--   dplyr::group_by(exp_name,sub_name)%>% -->
+<!--   dplyr::mutate(tile_gz2pred=ntile(m_pred_gz,n_ptiles_gz2pred))%>% -->
+<!--   dplyr::relocate(tile_gz2pred,.after = m_pred_gz) -->
 
-```{r test confidence benchmark 1 with glmer}
-## RE: geberal intercept
-rule_acc_by_gz_pred_frmla<-resp_rule_acc~m_pred_gz+(1|sub_name)
+<!-- #get subject by subject -->
+<!-- sbs_acc_per_tile_gz2pred<-mean_gz_prereg_csv%>% -->
+<!--   dplyr::group_by(exp_name,sub_name,tile_gz2pred)%>% -->
+<!--   dplyr::summarize(m_actual_acc=mean(is_acc)*100,m_rule_acc=mean(resp_rule_acc)*100,m_gz2pred=mean(m_pred_gz),count=n()) -->
+
+
+<!-- #group- all subjects -->
+<!-- grp_acc_per_tile_gz2pred<-sbs_acc_per_tile_gz2pred%>% -->
+<!--   dplyr::group_by(exp_name,tile_gz2pred)%>% -->
+<!--   dplyr::summarize(lo_ci_act_acc=CI(m_actual_acc)[1],hi_ci_act_acc=CI(m_actual_acc)[3],m_actual_acc=CI(m_actual_acc)[2], -->
+<!--                    lo_ci_rule_acc=CI(m_rule_acc)[1],hi_ci_rule_acc=CI(m_rule_acc)[3],m_rule_acc=CI(m_rule_acc)[2]) -->
 
-rule_acc_by_gz_pred.res_exp1=glmer(rule_acc_by_gz_pred_frmla,data=mean_gz_prereg_csv%>%dplyr::filter(exp_name=="Exp. 1"),
-                                   family = binomial)%>%
-  broom.mixed::tidy()%>%
-  mutate(exp_name="Exp. 1")
 
+<!-- ``` -->
 
-rule_acc_by_gz_pred.res_exp2=glmer(rule_acc_by_gz_pred_frmla,data=mean_gz_prereg_csv%>%dplyr::filter(exp_name=="Exp. 2"),
-                                   family = binomial)%>%
-  broom.mixed::tidy()%>%
-  mutate(exp_name="Exp. 2")
+<!-- ```{r run prereg stats for benchmark 1} -->
 
-knitr::kable(bind_rows(rule_acc_by_gz_pred.res_exp1,rule_acc_by_gz_pred.res_exp2)%>%
-               dplyr::filter(!is.na(p.value)), digits = 5, caption="Conf benchmark 1 with glmer")
+<!-- # getting correlation of gaze & ACC (this is done on trial by-trial basis ) per subject -->
+<!-- sbs_corr_bench1_acc_gz_pred<-sbs_acc_per_tile_gz2pred%>% -->
+<!--   dplyr::group_by(exp_name,sub_name)%>% -->
+<!--   dplyr::summarize( -->
+<!--     # corr rule acc & gz prediction -->
+<!--     r.acc_gz_pred=rcorr(m_rule_acc,m_gz2pred,type = "spearman")$r[2],pval.acc_gz_pred=rcorr(m_rule_acc,m_gz2pred,type = "spearman")$P[2] -->
+<!--   )%>% -->
+<!--   dplyr::mutate(is_sig=if_else(pval.acc_gz_pred<.05,1,0)) -->
 
-```
 
-So this gives a really robust result that is also statistically much more appropriate. 
 
-Visualize Panel A: benchmark 1 (Right= Exp. 1 Left Exp. 2)
+<!-- #joining -->
+<!-- sum_stats_corr_bench1_acc_gz_pred <-sbs_corr_bench1_acc_gz_pred%>% -->
+<!--   group_by(exp_name)%>% -->
+<!--   dplyr::summarise(mean_corr=CI(r.acc_gz_pred)[2],lo_corr=CI(r.acc_gz_pred)[1],hi_corr=CI(r.acc_gz_pred)[3], -->
+<!--                    group_t_statistic=t.test(r.acc_gz_pred)$statistic, group_pval=t.test(r.acc_gz_pred)$p.value, -->
+<!--                    ES=one_sample_ttest_cohen_d(r.acc_gz_pred)) -->
 
-```{r visualize Fig 3A benchmark 1 check if accuarcy increases with gaze2prediction, fig.show="hold", out.width="50%" }
-# plot rule acc  
-##Exp. 1
-(plot_fig_3A_exp1<-
-   ggplot(data=grp_acc_per_tile_gz2pred%>%dplyr::filter(exp_name=="Exp. 1"),aes(x=tile_gz2pred, y= m_rule_acc))+
-   geom_pointrange(aes(ymin=lo_ci_rule_acc,ymax=hi_ci_rule_acc),color="black",linewidth=1.5)+
-    geom_line(alpha=.8,linewidth=2,color="black")+
-   geom_point(size=3)+
-   # geom_ribbon(aes(ymin=lo_ci_rule_acc,ymax=hi_ci_rule_acc),fill="sandybrown", alpha=.2,  color=NA)+
-   
-   scale_x_continuous(name= ("Gaze Prediction"))+
-   scale_y_continuous(name=("% Correct"),limits = c(62,86))+
-   
-   theme_classic()+
-   theme(axis.title.x = element_text(size = 16,face="bold"),
-         axis.title.y = element_text(size = 16,face="bold"),
-         axis.text.x = element_text(size = 14,angle=0),
-         axis.text.y = element_text(size = 14,angle=0),
-         legend.position = "none"
-   )
-)
-
-##Exp. 2
-(plot_fig_3A_exp2<-
-    ggplot(data=grp_acc_per_tile_gz2pred%>%dplyr::filter(exp_name=="Exp. 2"),aes(x=tile_gz2pred, y= m_rule_acc))+
-    geom_pointrange(aes(ymin=lo_ci_rule_acc,ymax=hi_ci_rule_acc),color="black",linewidth=1.5)+
-    geom_line(alpha=.8,linewidth=2,color="black")+
-    geom_point(size=3)+
-    # geom_ribbon(aes(ymin=lo_ci_rule_acc,ymax=hi_ci_rule_acc),fill="sandybrown", alpha=.2,  color=NA)+
-    scale_x_continuous(name= ("Gaze Prediction"))+
-    scale_y_continuous(name=("% Correct"),limits = c(62,86))+
-    theme_classic()+
-    theme(axis.title.x = element_text(size = 16,face="bold"),
-          axis.title.y = element_text(size = 16,face="bold"),
-          axis.text.x = element_text(size = 14,angle=0),
-          axis.text.y = element_text(size = 14,angle=0),
-         
-          legend.position = "none"
-    )
-)
-
-# ggsave(filename=file.path(path_export_main_pics,"plot_fig_3A_exp1.pdf"),plot=plot_fig_3A_exp1,device = "pdf")
-# ggsave(filename=file.path(path_export_main_pics,"plot_fig_3A_exp2.pdf"),plot=plot_fig_3A_exp2,device = "pdf")
-```
-
-
-### Panel B: Benchmark 2 - folded X pattern
-
-We are  binning by expectation strength & rule accuracy 
-
-
-```{r prep data to look at benchmark 2 of confidence using distV as proxy of evidence RWS}
-n_ptiles_dist_v<-6
-
-gz_by_distV_RWS_acc_df<-mean_gz_prereg_csv%>%
-  dplyr::group_by(exp_name,sub_name,resp_rule_acc)%>%
-  dplyr::mutate(dist_v_rule_acc_bin=ntile(expl.RWS.dist_v_5,n_ptiles_dist_v))%>% #binning according to RULE ACC
-  dplyr::relocate(dist_v_rule_acc_bin,.after="expl.RW.dist_v_5") %>%
-  dplyr::group_by(exp_name,sub_name)%>%
-  dplyr::mutate(dist_v_bin=ntile(expl.RWS.dist_v_5,n_ptiles_dist_v))%>% #binning only according to V
-  dplyr::relocate(dist_v_bin,.after="dist_v_rule_acc_bin") 
-```
-
-
-```{r run prereg stats for Benchmark 2 using lme4 RWS }
-#here 
-#Exp 1
-bench2_full_frmla<-m_pred_gz~resp_rule_acc+dist_v_rule_acc_bin+resp_rule_acc:dist_v_rule_acc_bin+(1|sub_name)
-# bench2_full_frmla<-m_pred_gz~resp_rule_acc+expl.dist_v_5+resp_rule_acc:expl.dist_v_5+(1|sub_name)
-
-bench2_full_exp1.res_rws=lmer(bench2_full_frmla,data=gz_by_distV_RWS_acc_df%>%filter(exp_name=="Exp. 1"),REML = FALSE)
-
-
-
-# remove interaction term
-bench2_null_frmla<-m_pred_gz~resp_rule_acc+dist_v_rule_acc_bin+(1|sub_name)
-# bench2_null_frmla<-m_pred_gz~resp_rule_acc+expl.dist_v_5+(1|sub_name)
-
-bench2_null_exp1.res_rws=lmer(bench2_null_frmla,data=gz_by_distV_RWS_acc_df%>%filter(exp_name=="Exp. 1"),REML = FALSE)
-
-
-#test with anova
-bench2_aov_exp1_res_rws<-anova(bench2_full_exp1.res_rws,bench2_null_exp1.res_rws)%>%tidy()%>%mutate(exp = "Exp. 1")%>%dplyr::filter(!is.na(df))
-
-# Exp 2. 
-bench2_full_exp2.res_rws=lmer(bench2_full_frmla,data=gz_by_distV_RWS_acc_df%>%filter(exp_name=="Exp. 2"),REML = FALSE)
-bench2_null_exp2.res_rws=lmer(bench2_null_frmla,data=gz_by_distV_RWS_acc_df%>%filter(exp_name=="Exp. 2"),REML = FALSE)
-
-bench2_aov_exp2_res_rws<-anova(bench2_full_exp2.res_rws,bench2_null_exp2.res_rws)%>%tidy()%>%mutate(exp = "Exp. 2")%>%dplyr::filter(!is.na(df))
-
-knitr::kable(bind_rows(bench2_aov_exp1_res_rws,bench2_aov_exp2_res_rws), digits= 4, caption= "RWS lme results Benchmark 2")
-```
-
-```{r getting summary stats for visualization bin by v  and acc RWS}
-# summarizing across subjects
-gz_by_distV_acc_grp_rws<-gz_by_distV_RWS_acc_df%>%
-  dplyr::group_by(exp_name,sub_name,dist_v_rule_acc_bin,resp_rule_acc)%>%
-  dplyr::summarise(m_gz2pred=mean(m_pred_gz),count=n())%>%
-  dplyr::mutate(acc_type="rule")%>%
-  dplyr::rename(acc=resp_rule_acc)%>%
-  dplyr::filter(count>4)%>%
-  dplyr::group_by(exp_name,dist_v_rule_acc_bin,acc)%>%
-  dplyr::summarise(lo_ci=CI(m_gz2pred)[1],hi_ci=CI(m_gz2pred)[3],m_gz2pred=CI(m_gz2pred)[2],n_sub=n())
-
-```
-
-
-```{r visualize benchmark 2 for Acc as functioon of gaze confidence & v binn using v and acc RWS, fig.show="hold", out.width="50%" }
-#visualize rule acc
-(
-  plot_fig_3B_exp1<-
-    ggplot(data=gz_by_distV_acc_grp_rws%>%dplyr::filter(exp_name=="Exp. 1"),
-           aes(x=(dist_v_rule_acc_bin),y=m_gz2pred,color=as.factor(acc),fill=as.factor(acc), group=as.factor(acc)))+
-    geom_line(aes(color=as.factor(acc)),alpha=.4,linewidth=2)+
-    geom_pointrange(aes(ymin=lo_ci,ymax=hi_ci,group=as.factor(dist_v_rule_acc_bin)),position = position_dodge2(width=.1),linewidth=1.5)+
-    scale_x_continuous(name=" Expectation Strength")+
-    scale_y_continuous(name = "Gaze Prediction")+
-    scale_color_manual(name="ACC",values=color_vec_benchmark2_acc,labels=c("error","correct"))+
-    scale_fill_manual(name="ACC",values=color_vec_benchmark2_acc,labels=c("error","correct"))+
-    theme_classic()+
-    theme(plot.title = element_text(size = 20,face="bold",hjust = 0.5),
-          axis.title.x = element_text(size = 16,face="bold"),
-          axis.title.y = element_text(size = 16,face="bold"),
-          axis.text.x = element_text(size = 14,angle=0),
-          axis.text.y = element_text(size = 14,angle=0),
-          legend.position = "none"
-    )
-)
-
-## Exp. 2
-(
-  plot_fig_3B_exp2<-
-    ggplot(data=gz_by_distV_acc_grp_rws%>%dplyr::filter(exp_name=="Exp. 2"),
-           aes(x=(dist_v_rule_acc_bin),y=m_gz2pred,color=as.factor(acc),fill=as.factor(acc), group=as.factor(acc)))+
-    geom_line(aes(color=as.factor(acc)),alpha=.4,linewidth=2)+
-    # geom_point(aes(color=as.factor(acc)))+
-    # geom_ribbon(aes(ymin=lo_ci,ymax=hi_ci,fill=as.factor(acc),group=as.factor(acc)), alpha=.2,colour = NA)+
-    geom_pointrange(aes(ymin=lo_ci,ymax=hi_ci,group=as.factor(dist_v_rule_acc_bin)),position = position_dodge2(width=.1),linewidth=1.5)+
-    scale_x_continuous(name=" Expectation Strength")+
-    scale_y_continuous(name = "Gaze Prediction")+
-    scale_color_manual(name="ACC",values=color_vec_benchmark2_acc,labels=c("error","correct"))+
-    scale_fill_manual(name="ACC",values=color_vec_benchmark2_acc,labels=c("error","correct"))+
-    # ggtitle("Gaze2Pred diverges  by\n expectation strength & Acc")+
-    theme_classic()+
-    theme(plot.title = element_text(size = 20,face="bold",hjust = 0.5),
-          axis.title.x = element_text(size = 16,face="bold"),
-          axis.title.y = element_text(size = 16,face="bold"),
-          axis.text.x = element_text(size = 14,angle=0),
-          axis.text.y = element_text(size = 14,angle=0),
-          legend.position = "none"
-    )
-)
-
-
-# ggsave(filename=file.path(path_export_main_pics,"plot_fig_3B_exp1.pdf"),plot=plot_fig_3B_exp1,width=16,height=16,dpi=600, units="cm",device = "pdf")
-# ggsave(filename=file.path(path_export_main_pics,"plot_fig_3B_exp2.pdf"),plot=plot_fig_3B_exp2,width=16,height=16,dpi=600, units="cm",device = "pdf")
-
-```
-
-
-### Fig 3C: Benchmark 3 - steeper curve for high Gaze prediction trials
-
-```{r benchmark 3: prep data to look at  of confidence using distV RWS as proxy of evidence}
-# binning prediction gz streng
-acc_by_gz_distV_RWS_sbs<-mean_gz_prereg_csv%>%
-  dplyr::group_by(exp_name,sub_name)%>%
-  dplyr::mutate(dist_v_bin=ntile(expl.RWS.dist_v_5,6))%>% #binning  distance of V
-  dplyr::mutate(pred_gz_bin=ntile(m_pred_gz,2))%>% #binning high & low gaze2pred
-  dplyr::relocate(dist_v_bin,.after="expl.RWS.dist_v_5")%>%
-  dplyr::relocate(pred_gz_bin,.after="m_pred_gz")%>%
-  drop_na(dist_v_bin)%>%
-  dplyr::group_by(exp_name,sub_name,dist_v_bin,pred_gz_bin)%>%
-  dplyr::summarize(acc=mean(resp_rule_acc),count=n()) 
-
-# summarizing across subject
-acc_by_gz_distV_RWS_grp<-acc_by_gz_distV_RWS_sbs%>%
-  dplyr::group_by(exp_name,dist_v_bin,pred_gz_bin)%>%
-  dplyr::summarise(lo_ci=CI(acc)[1]*100,hi_ci=CI(acc)[3]*100,m_acc=CI(acc)[2]*100)
-
-
-
-```
-
-
-```{r visualize benchmark 3 for gaze as confidence using V RWS as proxy of evidence, fig.show="hold", out.width="50%" }
-
-#define colors for high/low gaze prediction
-cvec_pred_strength<-c("black","azure3")
-
-
-#Experiment 1
-( plot_fig_3C_exp1<-
-    ggplot(acc_by_gz_distV_RWS_grp%>%dplyr::filter(exp_name=="Exp. 1"),
-           aes(x=(dist_v_bin),y=m_acc,color=as.factor(pred_gz_bin),fill=as.factor(pred_gz_bin), group=(dist_v_bin)))+
-    geom_pointrange(aes(ymin=lo_ci,ymax=hi_ci,group=as.factor(dist_v_bin)),position = position_dodge2(width=.1),linewidth=1.5)+
-    geom_line(aes(color=as.factor(pred_gz_bin),group=as.factor(pred_gz_bin)),alpha=.8,linewidth=2)+
-    
-    scale_x_continuous(name="Expectation Strength")+
-    scale_y_continuous(name = "% Correct")+
-    scale_color_manual(name="Gaze Prediction", labels=c("low","high"), values=cvec_pred_strength)+
-    scale_fill_manual(name="Gaze Prediction", labels=c("low","high"), values=c("black","azure2"))+
-    theme_classic()+
-    theme(axis.title.x = element_text(size = 12,face="bold"),
-          axis.title.y = element_text(size = 12,face="bold"),
-          axis.text.x = element_text(size = 10,angle=0),
-          axis.text.y = element_text(size = 10,angle=0),
-          legend.position = "none"
-         )
-    )
-
-
-#Experiment 2
-(plot_fig_3C_exp2<-
-    ggplot(acc_by_gz_distV_RWS_grp%>%dplyr::filter(exp_name=="Exp. 2"),
-           aes(x=(dist_v_bin),y=m_acc,color=as.factor(pred_gz_bin),fill=as.factor(pred_gz_bin), group=(dist_v_bin)))+
-    geom_pointrange(aes(ymin=lo_ci,ymax=hi_ci,group=as.factor(dist_v_bin)),position = position_dodge2(width=.1),linewidth=1.5)+
-    geom_line(aes(color=as.factor(pred_gz_bin),group=as.factor(pred_gz_bin)),alpha=.8,linewidth=2)+
-    
-    scale_x_continuous(name="Expectation Strength")+
-    scale_y_continuous(name = "% Correct")+
-    scale_color_manual(name="Gaze Prediction", labels=c("low","high"), values=cvec_pred_strength)+
-    scale_fill_manual(name="Gaze Prediction", labels=c("low","high"), values=c("black","azure2"))+
-    theme_classic()+
-    theme(axis.title.x = element_text(size = 12,face="bold"),
-          axis.title.y = element_text(size = 12,face="bold"),
-          axis.text.x = element_text(size = 10,angle=0),
-          axis.text.y = element_text(size = 10,angle=0),
-          legend.position = c(.9,.2)
-         )
-)
-
-
-# ggsave(filename=file.path(path_export_main_pics,"plot_fig_3C_exp1.pdf"),plot=plot_fig_3C_exp1,width=16,height=16,dpi=600, units="cm",device = "pdf")
-# ggsave(filename=file.path(path_export_main_pics,"plot_fig_3C_exp2.pdf"),plot=plot_fig_3C_exp2,width=16,height=16,dpi=600, units="cm",device = "pdf")
-```
-
-```{r prep data to run prereg stats for Benchmark 3 using lme4  bin only by v5 RWS}
-acc_w_gz_distV_RWS_sbs_4stats<-mean_gz_prereg_csv%>%
-  dplyr::group_by(exp_name,sub_name)%>%
-  dplyr::mutate(dist_v_bin=ntile(expl.RWS.dist_v_5,6))%>% #binning  distance of V
-  dplyr::mutate(pred_gz_bin=ntile(m_pred_gz,2))%>% #binning high & low gaze2pred
-  dplyr::relocate(dist_v_bin,.after="expl.RWS.dist_v_5")%>%
-  dplyr::relocate(pred_gz_bin,.after="m_pred_gz")%>%
-  dplyr::select("exp_name","sub_name","TrialNumber","resp_rule_acc", "pred_gz_bin","dist_v_bin")
-
-
-```
-
-```{r run prereg stats for Benchmark 3 using lme4  bin only by v5 RWS glmer}
-bench3_full_frmla<-resp_rule_acc~pred_gz_bin+dist_v_bin+pred_gz_bin:dist_v_bin+(1|sub_name)
-
-#Exp 1
-bench3_full_exp1.res_rws=glmer(bench3_full_frmla,                        
-                               data=acc_w_gz_distV_RWS_sbs_4stats%>%filter(exp_name=="Exp. 1")%>%ungroup(),
-                               family = binomial)%>%
-  broom.mixed::tidy()%>%
-  mutate(exp_name="Exp. 1")
-
-
-# Exp 2
-bench3_full_exp2.res_rws=glmer(bench3_full_frmla,                        
-                               data=acc_w_gz_distV_RWS_sbs_4stats%>%filter(exp_name=="Exp. 2")%>%ungroup(),
-                               family = binomial)%>%
-  broom.mixed::tidy()%>%
-  mutate(exp_name="Exp. 2")
-
-knitr::kable(bind_rows(bench3_full_exp1.res_rws,bench3_full_exp2.res_rws)%>%dplyr::filter(effect=="fixed"),caption = "Benchmark 3 RWS (glmer)")
-```
-
-### Additional analyses on FXP
+<!-- knitr::kable(sum_stats_corr_bench1_acc_gz_pred,digits=4, caption = "Conf benchmark 1 distribution of spearman correlation") -->
+<!-- ``` -->
+
+<!-- So these results aren't super strong. But this is actually a pretty poor way of testing this hypothesis.  -->
+
+<!-- Let's try now using a logistic regression approach -->
+
+<!-- ```{r test confidence benchmark 1 with glmer} -->
+<!-- ## RE: geberal intercept -->
+<!-- rule_acc_by_gz_pred_frmla<-resp_rule_acc~m_pred_gz+(1|sub_name) -->
+
+<!-- rule_acc_by_gz_pred.res_exp1=glmer(rule_acc_by_gz_pred_frmla,data=mean_gz_prereg_csv%>%dplyr::filter(exp_name=="Exp. 1"), -->
+<!--                                    family = binomial)%>% -->
+<!--   broom.mixed::tidy()%>% -->
+<!--   mutate(exp_name="Exp. 1") -->
+
+
+<!-- rule_acc_by_gz_pred.res_exp2=glmer(rule_acc_by_gz_pred_frmla,data=mean_gz_prereg_csv%>%dplyr::filter(exp_name=="Exp. 2"), -->
+<!--                                    family = binomial)%>% -->
+<!--   broom.mixed::tidy()%>% -->
+<!--   mutate(exp_name="Exp. 2") -->
+
+<!-- knitr::kable(bind_rows(rule_acc_by_gz_pred.res_exp1,rule_acc_by_gz_pred.res_exp2)%>% -->
+<!--                dplyr::filter(!is.na(p.value)), digits = 5, caption="Conf benchmark 1 with glmer") -->
+
+<!-- ``` -->
+
+<!-- So this gives a really robust result that is also statistically much more appropriate.  -->
+
+<!-- Visualize Panel A: benchmark 1 (Right= Exp. 1 Left Exp. 2) -->
+
+<!-- ```{r visualize Fig 3A benchmark 1 check if accuarcy increases with gaze2prediction, fig.show="hold", out.width="50%" } -->
+<!-- # plot rule acc   -->
+<!-- ##Exp. 1 -->
+<!-- (plot_fig_3A_exp1<- -->
+<!--    ggplot(data=grp_acc_per_tile_gz2pred%>%dplyr::filter(exp_name=="Exp. 1"),aes(x=tile_gz2pred, y= m_rule_acc))+ -->
+<!--    geom_pointrange(aes(ymin=lo_ci_rule_acc,ymax=hi_ci_rule_acc),color="black",linewidth=1.5)+ -->
+<!--     geom_line(alpha=.8,linewidth=2,color="black")+ -->
+<!--    geom_point(size=3)+ -->
+<!--    # geom_ribbon(aes(ymin=lo_ci_rule_acc,ymax=hi_ci_rule_acc),fill="sandybrown", alpha=.2,  color=NA)+ -->
+
+<!--    scale_x_continuous(name= ("Gaze Prediction"))+ -->
+<!--    scale_y_continuous(name=("% Correct"),limits = c(62,86))+ -->
+
+<!--    theme_classic()+ -->
+<!--    theme(axis.title.x = element_text(size = 16,face="bold"), -->
+<!--          axis.title.y = element_text(size = 16,face="bold"), -->
+<!--          axis.text.x = element_text(size = 14,angle=0), -->
+<!--          axis.text.y = element_text(size = 14,angle=0), -->
+<!--          legend.position = "none" -->
+<!--    ) -->
+<!-- ) -->
+
+<!-- ##Exp. 2 -->
+<!-- (plot_fig_3A_exp2<- -->
+<!--     ggplot(data=grp_acc_per_tile_gz2pred%>%dplyr::filter(exp_name=="Exp. 2"),aes(x=tile_gz2pred, y= m_rule_acc))+ -->
+<!--     geom_pointrange(aes(ymin=lo_ci_rule_acc,ymax=hi_ci_rule_acc),color="black",linewidth=1.5)+ -->
+<!--     geom_line(alpha=.8,linewidth=2,color="black")+ -->
+<!--     geom_point(size=3)+ -->
+<!--     # geom_ribbon(aes(ymin=lo_ci_rule_acc,ymax=hi_ci_rule_acc),fill="sandybrown", alpha=.2,  color=NA)+ -->
+<!--     scale_x_continuous(name= ("Gaze Prediction"))+ -->
+<!--     scale_y_continuous(name=("% Correct"),limits = c(62,86))+ -->
+<!--     theme_classic()+ -->
+<!--     theme(axis.title.x = element_text(size = 16,face="bold"), -->
+<!--           axis.title.y = element_text(size = 16,face="bold"), -->
+<!--           axis.text.x = element_text(size = 14,angle=0), -->
+<!--           axis.text.y = element_text(size = 14,angle=0), -->
+
+<!--           legend.position = "none" -->
+<!--     ) -->
+<!-- ) -->
+
+<!-- # ggsave(filename=file.path(path_export_main_pics,"plot_fig_3A_exp1.pdf"),plot=plot_fig_3A_exp1,device = "pdf") -->
+<!-- # ggsave(filename=file.path(path_export_main_pics,"plot_fig_3A_exp2.pdf"),plot=plot_fig_3A_exp2,device = "pdf") -->
+<!-- ``` -->
+
+
+<!-- ### Panel B: Benchmark 2 - folded X pattern -->
+
+<!-- We are  binning by expectation strength & rule accuracy  -->
+
+
+<!-- ```{r prep data to look at benchmark 2 of confidence using distV as proxy of evidence RWS} -->
+<!-- n_ptiles_dist_v<-6 -->
+
+<!-- gz_by_distV_RWS_acc_df<-mean_gz_prereg_csv%>% -->
+<!--   dplyr::group_by(exp_name,sub_name,resp_rule_acc)%>% -->
+<!--   dplyr::mutate(dist_v_rule_acc_bin=ntile(expl.RWS.dist_v_5,n_ptiles_dist_v))%>% #binning according to RULE ACC -->
+<!--   dplyr::relocate(dist_v_rule_acc_bin,.after="expl.RW.dist_v_5") %>% -->
+<!--   dplyr::group_by(exp_name,sub_name)%>% -->
+<!--   dplyr::mutate(dist_v_bin=ntile(expl.RWS.dist_v_5,n_ptiles_dist_v))%>% #binning only according to V -->
+<!--   dplyr::relocate(dist_v_bin,.after="dist_v_rule_acc_bin")  -->
+<!-- ``` -->
+
+
+<!-- ```{r run prereg stats for Benchmark 2 using lme4 RWS } -->
+<!-- #here  -->
+<!-- #Exp 1 -->
+<!-- bench2_full_frmla<-m_pred_gz~resp_rule_acc+dist_v_rule_acc_bin+resp_rule_acc:dist_v_rule_acc_bin+(1|sub_name) -->
+<!-- # bench2_full_frmla<-m_pred_gz~resp_rule_acc+expl.dist_v_5+resp_rule_acc:expl.dist_v_5+(1|sub_name) -->
+
+<!-- bench2_full_exp1.res_rws=lmer(bench2_full_frmla,data=gz_by_distV_RWS_acc_df%>%filter(exp_name=="Exp. 1"),REML = FALSE) -->
+
+
+
+<!-- # remove interaction term -->
+<!-- bench2_null_frmla<-m_pred_gz~resp_rule_acc+dist_v_rule_acc_bin+(1|sub_name) -->
+<!-- # bench2_null_frmla<-m_pred_gz~resp_rule_acc+expl.dist_v_5+(1|sub_name) -->
+
+<!-- bench2_null_exp1.res_rws=lmer(bench2_null_frmla,data=gz_by_distV_RWS_acc_df%>%filter(exp_name=="Exp. 1"),REML = FALSE) -->
+
+
+<!-- #test with anova -->
+<!-- bench2_aov_exp1_res_rws<-anova(bench2_full_exp1.res_rws,bench2_null_exp1.res_rws)%>%tidy()%>%mutate(exp = "Exp. 1")%>%dplyr::filter(!is.na(df)) -->
+
+<!-- # Exp 2.  -->
+<!-- bench2_full_exp2.res_rws=lmer(bench2_full_frmla,data=gz_by_distV_RWS_acc_df%>%filter(exp_name=="Exp. 2"),REML = FALSE) -->
+<!-- bench2_null_exp2.res_rws=lmer(bench2_null_frmla,data=gz_by_distV_RWS_acc_df%>%filter(exp_name=="Exp. 2"),REML = FALSE) -->
+
+<!-- bench2_aov_exp2_res_rws<-anova(bench2_full_exp2.res_rws,bench2_null_exp2.res_rws)%>%tidy()%>%mutate(exp = "Exp. 2")%>%dplyr::filter(!is.na(df)) -->
+
+<!-- knitr::kable(bind_rows(bench2_aov_exp1_res_rws,bench2_aov_exp2_res_rws), digits= 4, caption= "RWS lme results Benchmark 2") -->
+<!-- ``` -->
+
+<!-- ```{r getting summary stats for visualization bin by v  and acc RWS} -->
+<!-- # summarizing across subjects -->
+<!-- gz_by_distV_acc_grp_rws<-gz_by_distV_RWS_acc_df%>% -->
+<!--   dplyr::group_by(exp_name,sub_name,dist_v_rule_acc_bin,resp_rule_acc)%>% -->
+<!--   dplyr::summarise(m_gz2pred=mean(m_pred_gz),count=n())%>% -->
+<!--   dplyr::mutate(acc_type="rule")%>% -->
+<!--   dplyr::rename(acc=resp_rule_acc)%>% -->
+<!--   dplyr::filter(count>4)%>% -->
+<!--   dplyr::group_by(exp_name,dist_v_rule_acc_bin,acc)%>% -->
+<!--   dplyr::summarise(lo_ci=CI(m_gz2pred)[1],hi_ci=CI(m_gz2pred)[3],m_gz2pred=CI(m_gz2pred)[2],n_sub=n()) -->
+
+<!-- ``` -->
+
+
+<!-- ```{r visualize benchmark 2 for Acc as functioon of gaze confidence & v binn using v and acc RWS, fig.show="hold", out.width="50%" } -->
+<!-- #visualize rule acc -->
+<!-- ( -->
+<!--   plot_fig_3B_exp1<- -->
+<!--     ggplot(data=gz_by_distV_acc_grp_rws%>%dplyr::filter(exp_name=="Exp. 1"), -->
+<!--            aes(x=(dist_v_rule_acc_bin),y=m_gz2pred,color=as.factor(acc),fill=as.factor(acc), group=as.factor(acc)))+ -->
+<!--     geom_line(aes(color=as.factor(acc)),alpha=.4,linewidth=2)+ -->
+<!--     geom_pointrange(aes(ymin=lo_ci,ymax=hi_ci,group=as.factor(dist_v_rule_acc_bin)),position = position_dodge2(width=.1),linewidth=1.5)+ -->
+<!--     scale_x_continuous(name=" Expectation Strength")+ -->
+<!--     scale_y_continuous(name = "Gaze Prediction")+ -->
+<!--     scale_color_manual(name="ACC",values=color_vec_benchmark2_acc,labels=c("error","correct"))+ -->
+<!--     scale_fill_manual(name="ACC",values=color_vec_benchmark2_acc,labels=c("error","correct"))+ -->
+<!--     theme_classic()+ -->
+<!--     theme(plot.title = element_text(size = 20,face="bold",hjust = 0.5), -->
+<!--           axis.title.x = element_text(size = 16,face="bold"), -->
+<!--           axis.title.y = element_text(size = 16,face="bold"), -->
+<!--           axis.text.x = element_text(size = 14,angle=0), -->
+<!--           axis.text.y = element_text(size = 14,angle=0), -->
+<!--           legend.position = "none" -->
+<!--     ) -->
+<!-- ) -->
+
+<!-- ## Exp. 2 -->
+<!-- ( -->
+<!--   plot_fig_3B_exp2<- -->
+<!--     ggplot(data=gz_by_distV_acc_grp_rws%>%dplyr::filter(exp_name=="Exp. 2"), -->
+<!--            aes(x=(dist_v_rule_acc_bin),y=m_gz2pred,color=as.factor(acc),fill=as.factor(acc), group=as.factor(acc)))+ -->
+<!--     geom_line(aes(color=as.factor(acc)),alpha=.4,linewidth=2)+ -->
+<!--     # geom_point(aes(color=as.factor(acc)))+ -->
+<!--     # geom_ribbon(aes(ymin=lo_ci,ymax=hi_ci,fill=as.factor(acc),group=as.factor(acc)), alpha=.2,colour = NA)+ -->
+<!--     geom_pointrange(aes(ymin=lo_ci,ymax=hi_ci,group=as.factor(dist_v_rule_acc_bin)),position = position_dodge2(width=.1),linewidth=1.5)+ -->
+<!--     scale_x_continuous(name=" Expectation Strength")+ -->
+<!--     scale_y_continuous(name = "Gaze Prediction")+ -->
+<!--     scale_color_manual(name="ACC",values=color_vec_benchmark2_acc,labels=c("error","correct"))+ -->
+<!--     scale_fill_manual(name="ACC",values=color_vec_benchmark2_acc,labels=c("error","correct"))+ -->
+<!--     # ggtitle("Gaze2Pred diverges  by\n expectation strength & Acc")+ -->
+<!--     theme_classic()+ -->
+<!--     theme(plot.title = element_text(size = 20,face="bold",hjust = 0.5), -->
+<!--           axis.title.x = element_text(size = 16,face="bold"), -->
+<!--           axis.title.y = element_text(size = 16,face="bold"), -->
+<!--           axis.text.x = element_text(size = 14,angle=0), -->
+<!--           axis.text.y = element_text(size = 14,angle=0), -->
+<!--           legend.position = "none" -->
+<!--     ) -->
+<!-- ) -->
+
+
+<!-- # ggsave(filename=file.path(path_export_main_pics,"plot_fig_3B_exp1.pdf"),plot=plot_fig_3B_exp1,width=16,height=16,dpi=600, units="cm",device = "pdf") -->
+<!-- # ggsave(filename=file.path(path_export_main_pics,"plot_fig_3B_exp2.pdf"),plot=plot_fig_3B_exp2,width=16,height=16,dpi=600, units="cm",device = "pdf") -->
+
+<!-- ``` -->
+
+
+<!-- ### Fig 3C: Benchmark 3 - steeper curve for high Gaze prediction trials -->
+
+<!-- ```{r benchmark 3: prep data to look at  of confidence using distV RWS as proxy of evidence} -->
+<!-- # binning prediction gz streng -->
+<!-- acc_by_gz_distV_RWS_sbs<-mean_gz_prereg_csv%>% -->
+<!--   dplyr::group_by(exp_name,sub_name)%>% -->
+<!--   dplyr::mutate(dist_v_bin=ntile(expl.RWS.dist_v_5,6))%>% #binning  distance of V -->
+<!--   dplyr::mutate(pred_gz_bin=ntile(m_pred_gz,2))%>% #binning high & low gaze2pred -->
+<!--   dplyr::relocate(dist_v_bin,.after="expl.RWS.dist_v_5")%>% -->
+<!--   dplyr::relocate(pred_gz_bin,.after="m_pred_gz")%>% -->
+<!--   drop_na(dist_v_bin)%>% -->
+<!--   dplyr::group_by(exp_name,sub_name,dist_v_bin,pred_gz_bin)%>% -->
+<!--   dplyr::summarize(acc=mean(resp_rule_acc),count=n())  -->
+
+<!-- # summarizing across subject -->
+<!-- acc_by_gz_distV_RWS_grp<-acc_by_gz_distV_RWS_sbs%>% -->
+<!--   dplyr::group_by(exp_name,dist_v_bin,pred_gz_bin)%>% -->
+<!--   dplyr::summarise(lo_ci=CI(acc)[1]*100,hi_ci=CI(acc)[3]*100,m_acc=CI(acc)[2]*100) -->
+
+
+
+<!-- ``` -->
+
+
+<!-- ```{r visualize benchmark 3 for gaze as confidence using V RWS as proxy of evidence, fig.show="hold", out.width="50%" } -->
+
+<!-- #define colors for high/low gaze prediction -->
+<!-- cvec_pred_strength<-c("black","azure3") -->
+
+
+<!-- #Experiment 1 -->
+<!-- ( plot_fig_3C_exp1<- -->
+<!--     ggplot(acc_by_gz_distV_RWS_grp%>%dplyr::filter(exp_name=="Exp. 1"), -->
+<!--            aes(x=(dist_v_bin),y=m_acc,color=as.factor(pred_gz_bin),fill=as.factor(pred_gz_bin), group=(dist_v_bin)))+ -->
+<!--     geom_pointrange(aes(ymin=lo_ci,ymax=hi_ci,group=as.factor(dist_v_bin)),position = position_dodge2(width=.1),linewidth=1.5)+ -->
+<!--     geom_line(aes(color=as.factor(pred_gz_bin),group=as.factor(pred_gz_bin)),alpha=.8,linewidth=2)+ -->
+
+<!--     scale_x_continuous(name="Expectation Strength")+ -->
+<!--     scale_y_continuous(name = "% Correct")+ -->
+<!--     scale_color_manual(name="Gaze Prediction", labels=c("low","high"), values=cvec_pred_strength)+ -->
+<!--     scale_fill_manual(name="Gaze Prediction", labels=c("low","high"), values=c("black","azure2"))+ -->
+<!--     theme_classic()+ -->
+<!--     theme(axis.title.x = element_text(size = 12,face="bold"), -->
+<!--           axis.title.y = element_text(size = 12,face="bold"), -->
+<!--           axis.text.x = element_text(size = 10,angle=0), -->
+<!--           axis.text.y = element_text(size = 10,angle=0), -->
+<!--           legend.position = "none" -->
+<!--          ) -->
+<!--     ) -->
+
+
+<!-- #Experiment 2 -->
+<!-- (plot_fig_3C_exp2<- -->
+<!--     ggplot(acc_by_gz_distV_RWS_grp%>%dplyr::filter(exp_name=="Exp. 2"), -->
+<!--            aes(x=(dist_v_bin),y=m_acc,color=as.factor(pred_gz_bin),fill=as.factor(pred_gz_bin), group=(dist_v_bin)))+ -->
+<!--     geom_pointrange(aes(ymin=lo_ci,ymax=hi_ci,group=as.factor(dist_v_bin)),position = position_dodge2(width=.1),linewidth=1.5)+ -->
+<!--     geom_line(aes(color=as.factor(pred_gz_bin),group=as.factor(pred_gz_bin)),alpha=.8,linewidth=2)+ -->
+
+<!--     scale_x_continuous(name="Expectation Strength")+ -->
+<!--     scale_y_continuous(name = "% Correct")+ -->
+<!--     scale_color_manual(name="Gaze Prediction", labels=c("low","high"), values=cvec_pred_strength)+ -->
+<!--     scale_fill_manual(name="Gaze Prediction", labels=c("low","high"), values=c("black","azure2"))+ -->
+<!--     theme_classic()+ -->
+<!--     theme(axis.title.x = element_text(size = 12,face="bold"), -->
+<!--           axis.title.y = element_text(size = 12,face="bold"), -->
+<!--           axis.text.x = element_text(size = 10,angle=0), -->
+<!--           axis.text.y = element_text(size = 10,angle=0), -->
+<!--           legend.position = c(.9,.2) -->
+<!--          ) -->
+<!-- ) -->
+
+
+<!-- # ggsave(filename=file.path(path_export_main_pics,"plot_fig_3C_exp1.pdf"),plot=plot_fig_3C_exp1,width=16,height=16,dpi=600, units="cm",device = "pdf") -->
+<!-- # ggsave(filename=file.path(path_export_main_pics,"plot_fig_3C_exp2.pdf"),plot=plot_fig_3C_exp2,width=16,height=16,dpi=600, units="cm",device = "pdf") -->
+<!-- ``` -->
+
+<!-- ```{r prep data to run prereg stats for Benchmark 3 using lme4  bin only by v5 RWS} -->
+<!-- acc_w_gz_distV_RWS_sbs_4stats<-mean_gz_prereg_csv%>% -->
+<!--   dplyr::group_by(exp_name,sub_name)%>% -->
+<!--   dplyr::mutate(dist_v_bin=ntile(expl.RWS.dist_v_5,6))%>% #binning  distance of V -->
+<!--   dplyr::mutate(pred_gz_bin=ntile(m_pred_gz,2))%>% #binning high & low gaze2pred -->
+<!--   dplyr::relocate(dist_v_bin,.after="expl.RWS.dist_v_5")%>% -->
+<!--   dplyr::relocate(pred_gz_bin,.after="m_pred_gz")%>% -->
+<!--   dplyr::select("exp_name","sub_name","TrialNumber","resp_rule_acc", "pred_gz_bin","dist_v_bin") -->
+
+
+<!-- ``` -->
+
+<!-- ```{r run prereg stats for Benchmark 3 using lme4  bin only by v5 RWS glmer} -->
+<!-- bench3_full_frmla<-resp_rule_acc~pred_gz_bin+dist_v_bin+pred_gz_bin:dist_v_bin+(1|sub_name) -->
+
+<!-- #Exp 1 -->
+<!-- bench3_full_exp1.res_rws=glmer(bench3_full_frmla,                         -->
+<!--                                data=acc_w_gz_distV_RWS_sbs_4stats%>%filter(exp_name=="Exp. 1")%>%ungroup(), -->
+<!--                                family = binomial)%>% -->
+<!--   broom.mixed::tidy()%>% -->
+<!--   mutate(exp_name="Exp. 1") -->
+
+
+<!-- # Exp 2 -->
+<!-- bench3_full_exp2.res_rws=glmer(bench3_full_frmla,                         -->
+<!--                                data=acc_w_gz_distV_RWS_sbs_4stats%>%filter(exp_name=="Exp. 2")%>%ungroup(), -->
+<!--                                family = binomial)%>% -->
+<!--   broom.mixed::tidy()%>% -->
+<!--   mutate(exp_name="Exp. 2") -->
+
+<!-- knitr::kable(bind_rows(bench3_full_exp1.res_rws,bench3_full_exp2.res_rws)%>%dplyr::filter(effect=="fixed"),caption = "Benchmark 3 RWS (glmer)") -->
+<!-- ``` -->
+
+<!-- ### Additional analyses on FXP -->
 
 #### Examine if there is signficant downward slope in the FXP 
 Following Rev. 2's request
@@ -2557,7 +2557,7 @@ bind_rows(res.anova.inter_by_trial_pos,res.anova.pos_slope_by_trial_pos)%>%
 ### Table S5 & S6 PWC of benchmarks
 
 Table S5
-```{r get statistic tables of benchmark 2 pairwise comparisons RWS}
+```{r get statistic tables of benchmark 2 pairwise comparisons RWS v1}
 #getting summary
 smry_vals_gz_by_distV_RWS_acc_pairwise<-gz_by_distV_RWS_acc_df%>%
   dplyr::group_by(exp_name,sub_name,dist_v_rule_acc_bin,resp_rule_acc)%>%
@@ -2597,7 +2597,7 @@ knitr::kable(smry_gz_by_distV_RWS_acc_pairwise,digits=4,caption="SM table B2 pai
 
 ```
 
-```{r run pairwise comparison of Bench 2 RWS }
+```{r run pairwise comparison of Bench 2 RWS v1}
 sbs_bench2_RWS<-gz_by_distV_RWS_acc_df%>%
   dplyr::filter(exp_name%in%c("Exp. 1","Exp. 2"))%>%
   dplyr::group_by(exp_name,sub_name,dist_v_rule_acc_bin,resp_rule_acc)%>%
