@@ -1,8 +1,9 @@
 # Gaze_and_prediction_for_pub
 
-Repository for  "*‘Eye Know’*: Gaze reflects confidence in explicit predictions while relying on a distinct computational mechanism"  
+Repository for  "Post-Decision Gaze as a Behavioral Manifestation of Decision Confidence"
+ 
 
-Yonatan Stern, Ophir Netzer, Danny Koren, Yair Zvilichovsky, Uri Hertz, Roy Salomon
+Yonatan Stern, Ophir Netzer, Danny Koren, Morre Goldsmith, Yair Zvilichovsky, Uri Hertz, Roy Salomon
 
 Read Me for Data & Analysis Scripts 
 
