@@ -32,7 +32,8 @@ To run scripts as are, they need to be placed in sub_folder “processed_csv” 
 
 **Analysis scripts**
 
-•	“figs_and_stats_for_publication_final.Rmd”: is main markdown that contains all analysis. It’s organized according to figures. See it’s html output. (Note written on mac)
+•	“gz_as_conf_rsbp_rev_190326.Rmd”: is main markdown following the revision that contains all analysis. It’s organized according to figures. See it’s html output. (Note written on mac)
+-“figs_and_stats_for_publication_final.Rmd”: is the previous version of the analysis  markdown that contains all analysis.  See it’s html output. (Note written on mac)
 •	Function folder contains in-house functions and parameter file. 
 Model Fitting
 •	“fit_resp_eye_model_for_publication.m”: is main script for fitting. Fitting logic is inspired and adapted from (Wilson & Collins, 2019) utilizing BADS (Acerbi & Ji, 2017) for the parameter estimation. 
